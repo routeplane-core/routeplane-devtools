@@ -21,8 +21,21 @@ import { runProvidersList } from './commands/providers.js';
 import { runCachePurge } from './commands/cache.js';
 import { runFeedback } from './commands/feedback.js';
 import { runResidency } from './commands/residency.js';
+import { runLogin } from './commands/login.js';
+import {
+  runKeysList,
+  runKeysCreate,
+  runKeysRotate,
+  runKeysRevoke,
+} from './commands/keys.js';
+import { runTenantsList, runTenantsGet, runTenantsCreate } from './commands/tenants.js';
 import { resolveConnection, resolveOutput, ResolutionError, type GlobalFlags } from './resolve.js';
 import { dim, red } from './output.js';
+
+/** The active profile name from the global `--profile` flag (default `default`). */
+function profileOf(globals: GlobalFlags): string {
+  return globals.profile ?? 'default';
+}
 
 /** Collect a repeated `--var key=value` flag into an accumulating array. */
 function collectVar(value: string, previous: string[]): string[] {
@@ -225,6 +238,116 @@ program
     const globals = command.optsWithGlobals() as GlobalFlags;
     const conn = resolveConnection(globals);
     await runResidency(conn, resolveOutput(globals, Boolean(options.json)));
+  });
+
+// ---------------------------------------------------------------------------
+// Control Plane admin commands (separate binary, Entra ID OIDC auth)
+// ---------------------------------------------------------------------------
+
+program
+  .command('login')
+  .description('authenticate with the Control Plane (OAuth device-code flow)')
+  .option('--cp-url <url>', 'Control Plane base URL')
+  .option('--cp-tenant-id <id>', 'Entra directory (tenant) id')
+  .option('--cp-client-id <id>', 'Entra application (client) id')
+  .option('--scope <scope>', 'OAuth scope to request')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runLogin(profileOf(globals), {
+      cpUrl: options.cpUrl,
+      cpTenantId: options.cpTenantId,
+      cpClientId: options.cpClientId,
+      scope: options.scope,
+    });
+  });
+
+const keys = program.command('keys').description('virtual-key administration (Control Plane)');
+keys
+  .command('list')
+  .description('list virtual keys for a tenant')
+  .option('--tenant-id <id>', 'tenant to list keys for (defaults to the profile default)')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runKeysList(profileOf(globals), resolveOutput(globals, Boolean(options.json)), options.tenantId);
+  });
+keys
+  .command('create')
+  .description('create a new virtual key (shows the full value once)')
+  .option('--tenant-id <id>', 'tenant to create the key under')
+  .option('--name <name>', 'a human label for the key')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runKeysCreate(
+      profileOf(globals),
+      resolveOutput(globals, Boolean(options.json)),
+      options.tenantId,
+      options.name,
+    );
+  });
+keys
+  .command('rotate')
+  .description('rotate a key — issues a new value; the old one keeps a 30-day grace period')
+  .requiredOption('--key-id <id>', 'the key to rotate')
+  .option('--tenant-id <id>', 'tenant that owns the key')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runKeysRotate(
+      profileOf(globals),
+      resolveOutput(globals, Boolean(options.json)),
+      options.tenantId,
+      options.keyId,
+    );
+  });
+keys
+  .command('revoke')
+  .description('revoke a key immediately')
+  .requiredOption('--key-id <id>', 'the key to revoke')
+  .option('--tenant-id <id>', 'tenant that owns the key')
+  .option('--force', 'skip the confirmation prompt')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runKeysRevoke(
+      profileOf(globals),
+      resolveOutput(globals, Boolean(options.json)),
+      options.tenantId,
+      options.keyId,
+      Boolean(options.force),
+    );
+  });
+
+const tenants = program.command('tenants').description('tenant administration (Control Plane)');
+tenants
+  .command('list')
+  .description('list tenants')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runTenantsList(profileOf(globals), resolveOutput(globals, Boolean(options.json)));
+  });
+tenants
+  .command('get <tenant-id>')
+  .description('show tenant details')
+  .option('--json', 'raw JSON output')
+  .action(async (tenantId: string, options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runTenantsGet(profileOf(globals), resolveOutput(globals, Boolean(options.json)), tenantId);
+  });
+tenants
+  .command('create')
+  .description('create a tenant')
+  .requiredOption('--name <name>', 'tenant display name')
+  .option('--tier <tier>', 'entitlement tier (e.g. standard)')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    await runTenantsCreate(profileOf(globals), resolveOutput(globals, Boolean(options.json)), {
+      name: options.name,
+      tier: options.tier,
+    });
   });
 
 async function main(): Promise<void> {
