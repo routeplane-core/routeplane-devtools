@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "description": "TypeScript SDK for the Routeplane AI Gateway — a drop-in OpenAI client plus a zero-dependency core client and typed x-routeplane-* header builder.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/routeplane-core/routeplane-devtools.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/routeplane-core/routeplane-devtools",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

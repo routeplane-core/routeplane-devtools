@@ -3,10 +3,17 @@
   "version": "0.1.0",
   "description": "Model Context Protocol server for the Routeplane AI Gateway (Phase 3 — placeholder).",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/routeplane-core/routeplane-devtools.git",
+    "directory": "packages/mcp-server"
+  },
+  "homepage": "https://github.com/routeplane-core/routeplane-devtools",
   "type": "module",
   "bin": {
     "routeplane-mcp-server": "./dist/index.js"
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -15,6 +22,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "echo 'no tests'",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },

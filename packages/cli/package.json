@@ -3,10 +3,17 @@
   "version": "0.1.0",
   "description": "Command-line interface (rp) for the Routeplane AI Gateway — chat, status, and model catalog with profile-based config.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/routeplane-core/routeplane-devtools.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/routeplane-core/routeplane-devtools",
   "type": "module",
   "bin": {
     "rp": "./dist/index.js"
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -15,6 +22,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "echo 'no tests'",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
