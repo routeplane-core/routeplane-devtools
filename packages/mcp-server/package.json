@@ -19,9 +19,11 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@routeplane/sdk": "workspace:*"
+    "@routeplane/sdk": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1"
   },
   "devDependencies": {
+    "@types/node": "^20",
     "typescript": "^5.5"
   }
 }

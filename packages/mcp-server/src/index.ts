@@ -1,11 +1,29 @@
 #!/usr/bin/env node
 /**
- * @routeplane/mcp-server — Phase 3 placeholder.
+ * @routeplane/mcp-server — a Model Context Protocol server that exposes the
+ * Routeplane AI Gateway to MCP clients (Claude Code, Cursor, VS Code Copilot).
  *
- * A Model Context Protocol server that exposes the Routeplane gateway to MCP
- * clients (Claude Desktop, IDEs, agents) will be implemented in a later phase on
- * top of `@routeplane/sdk`. This entry reserves the package name, the `bin`
- * mapping, and the build wiring.
+ * Transport is stdio: JSON-RPC in on stdin, out on stdout. Diagnostics MUST go
+ * to stderr — anything written to stdout corrupts the protocol stream.
  */
 
-console.log('routeplane MCP server — coming in Phase 3. See https://routeplane.ai');
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+
+import { resolveConfig } from './config.js';
+import { createServer, SERVER_VERSION } from './server.js';
+
+async function main(): Promise<void> {
+  const config = resolveConfig(process.argv.slice(2), process.env);
+  const server = createServer(config);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write(
+    `routeplane mcp-server v${SERVER_VERSION} ready (gateway ${config.baseUrl})\n`,
+  );
+}
+
+main().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`routeplane mcp-server failed to start: ${message}\n`);
+  process.exit(1);
+});
