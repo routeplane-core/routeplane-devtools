@@ -1,0 +1,22 @@
+{
+  "name": "routeplane-devtools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Developer tooling suite for the Routeplane AI Gateway — SDK, CLI, and MCP server.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "turbo": "^2",
+    "typescript": "^5.5"
+  }
+}
