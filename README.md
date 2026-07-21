@@ -56,6 +56,20 @@ const usage = await rp.get('/v1/finops/usage', { from: '2026-07-01' });
 const headers = createHeaders({ provider: 'gemini', strategy: 'latency', residency: 'IN' });
 ```
 
+## Examples
+
+Runnable snippets live in [`examples/`](examples):
+
+| File | Shows |
+| --- | --- |
+| [`basic.ts`](examples/basic.ts) | Minimal `Routeplane` client — a drop-in OpenAI subclass |
+| [`headers-only.ts`](examples/headers-only.ts) | Stock `openai` SDK + `createHeaders` for per-request steering |
+| [`streaming.ts`](examples/streaming.ts) | Streaming with the gateway's decision metadata |
+| [`vercel-ai-sdk.ts`](examples/vercel-ai-sdk.ts) | Vercel AI SDK (`@ai-sdk/openai`) integration |
+| [`resources.ts`](examples/resources.ts) | Non-OpenAI surfaces — status, logs, FinOps, prompts, cache |
+
+See [`examples/`](examples) for more.
+
 ## Development
 
 ```bash
