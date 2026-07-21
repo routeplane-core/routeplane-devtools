@@ -8,4 +8,8 @@
 
 export * from './core/index.js';
 export { Routeplane } from './openai/index.js';
-export type { RouteplaneClientOptions, ChatCompletionWithMeta } from './openai/client.js';
+export type {
+  RouteplaneClientOptions,
+  ChatCompletionWithMeta,
+  ChatCompletionStreamWithMeta,
+} from './openai/client.js';

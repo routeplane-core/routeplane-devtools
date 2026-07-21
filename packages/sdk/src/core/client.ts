@@ -8,6 +8,18 @@
 import { createHeaders, type RouteplaneHeaders } from './headers.js';
 import { parseResponseMeta, type RouteplaneMeta } from './types.js';
 import { parseSSEStream } from './streaming.js';
+import {
+  AnalyticsResource,
+  CacheResource,
+  FeedbackResource,
+  FinOpsResource,
+  LogResource,
+  ModelsResource,
+  PromptResource,
+  ProvidersResource,
+  ResidencyResource,
+  StatusResource,
+} from './resources/index.js';
 
 export interface RouteplaneConfig {
   /** The `rp_...` virtual key. */
@@ -22,6 +34,16 @@ export interface RouteplaneConfig {
 
 const DEFAULT_BASE_URL = 'https://api.routeplane.ai';
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** A decoded response body paired with its `x-routeplane-*` metadata and raw headers. */
+export interface ResponseWithMeta<T> {
+  /** The parsed response body. */
+  data: T;
+  /** Decoded `x-routeplane-*` response metadata. */
+  meta: RouteplaneMeta;
+  /** The raw response headers. */
+  headers: Headers;
+}
 
 /** Error thrown for non-2xx responses (and client-side timeouts, with status 0). */
 export class RouteplaneError extends Error {
@@ -66,6 +88,27 @@ export class RouteplaneCoreClient {
   private readonly timeout: number;
   private readonly defaultHeaders: Record<string, string>;
 
+  /** Prompt-management resource (`/v1/prompts/*`). */
+  readonly prompts: PromptResource;
+  /** Request-log resource (`GET /v1/logs`). */
+  readonly logs: LogResource;
+  /** FinOps usage/cost resource (`/v1/finops/*`). */
+  readonly finops: FinOpsResource;
+  /** Response-cache resource (`POST /v1/cache/purge`). */
+  readonly cache: CacheResource;
+  /** Quality-feedback resource (`POST /v1/feedback`). */
+  readonly feedback: FeedbackResource;
+  /** Gateway status resource (`GET /status`). */
+  readonly status: StatusResource;
+  /** Sovereign-residency resource (`/v1/residency/*`). */
+  readonly residency: ResidencyResource;
+  /** Model-catalog resource (`/v1/models`). */
+  readonly models: ModelsResource;
+  /** Custom-provider resource (`/v1/providers`). */
+  readonly providers: ProvidersResource;
+  /** Analytics resource (`/analytics`). */
+  readonly analytics: AnalyticsResource;
+
   constructor(config: RouteplaneConfig) {
     if (!config.apiKey) {
       throw new Error('Routeplane: `apiKey` is required');
@@ -74,6 +117,17 @@ export class RouteplaneCoreClient {
     this.baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.timeout = config.timeout ?? DEFAULT_TIMEOUT_MS;
     this.defaultHeaders = config.headers ? createHeaders(config.headers) : {};
+
+    this.prompts = new PromptResource(this);
+    this.logs = new LogResource(this);
+    this.finops = new FinOpsResource(this);
+    this.cache = new CacheResource(this);
+    this.feedback = new FeedbackResource(this);
+    this.status = new StatusResource(this);
+    this.residency = new ResidencyResource(this);
+    this.models = new ModelsResource(this);
+    this.providers = new ProvidersResource(this);
+    this.analytics = new AnalyticsResource(this);
   }
 
   get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -86,6 +140,20 @@ export class RouteplaneCoreClient {
 
   delete<T>(path: string): Promise<T> {
     return this.request<T>('DELETE', path);
+  }
+
+  /** GET a request and return the parsed body together with its response metadata. */
+  getWithMeta<T>(path: string, params?: Record<string, string>): Promise<ResponseWithMeta<T>> {
+    return this.requestWithMeta<T>('GET', path, { params });
+  }
+
+  /** POST a request and return the parsed body together with its response metadata. */
+  postWithMeta<T>(
+    path: string,
+    body?: unknown,
+    extraHeaders?: Record<string, string>,
+  ): Promise<ResponseWithMeta<T>> {
+    return this.requestWithMeta<T>('POST', path, { body, extraHeaders });
   }
 
   /**
@@ -137,8 +205,16 @@ export class RouteplaneCoreClient {
   private async request<T>(
     method: string,
     path: string,
-    opts: { body?: unknown; params?: Record<string, string> } = {},
+    opts: { body?: unknown; params?: Record<string, string>; extraHeaders?: Record<string, string> } = {},
   ): Promise<T> {
+    return (await this.requestWithMeta<T>(method, path, opts)).data;
+  }
+
+  private async requestWithMeta<T>(
+    method: string,
+    path: string,
+    opts: { body?: unknown; params?: Record<string, string>; extraHeaders?: Record<string, string> } = {},
+  ): Promise<ResponseWithMeta<T>> {
     const hasBody = opts.body !== undefined;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
@@ -149,6 +225,7 @@ export class RouteplaneCoreClient {
         method,
         headers: {
           ...this.buildHeaders(),
+          ...(opts.extraHeaders ?? {}),
           accept: 'application/json',
           ...(hasBody ? { 'content-type': 'application/json' } : {}),
         },
@@ -175,7 +252,7 @@ export class RouteplaneCoreClient {
     if (!response.ok) {
       throw new RouteplaneError(extractErrorMessage(payload, response.status), response.status, payload, meta);
     }
-    return payload as T;
+    return { data: payload as T, meta, headers: response.headers };
   }
 
   private async parseBody(response: Response): Promise<unknown> {
