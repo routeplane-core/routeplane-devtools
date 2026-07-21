@@ -1,7 +1,7 @@
 {
   "name": "@routeplane/cli",
   "version": "0.1.0",
-  "description": "Command-line interface for the Routeplane AI Gateway (Phase 2 — placeholder).",
+  "description": "Command-line interface (rp) for the Routeplane AI Gateway — chat, status, and model catalog with profile-based config.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
@@ -19,9 +19,11 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@routeplane/sdk": "workspace:*"
+    "@routeplane/sdk": "workspace:*",
+    "commander": "^12"
   },
   "devDependencies": {
+    "@types/node": "^20",
     "typescript": "^5.5"
   }
 }
