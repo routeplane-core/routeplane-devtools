@@ -8,9 +8,13 @@
  *
  * Enforcement points are default-deny, and a deny is a decision rather than a
  * failure — the gateway returns it as HTTP 422 (429 for a quota deny) with a
- * structured body. The three verdict methods decode those into an `McpVerdict`
+ * structured body. The verdict methods decode those into an `McpVerdict`
  * instead of throwing, so calling code branches on `outcome` and only has to
  * catch genuine transport or entitlement errors.
+ *
+ * Reading a verdict is fail-closed: only an explicit allow is an allow, so a
+ * response this client cannot parse denies rather than falling through. The
+ * default-deny posture has to survive the client, not just the gateway.
  */
 
 import { RouteplaneError, type RouteplaneCoreClient } from '../client.js';
@@ -82,17 +86,50 @@ export interface ReceiptIssueOptions {
 /** Statuses the gateway answers a deny with, rather than failing the request. */
 const VERDICT_STATUSES = new Set([422, 429]);
 
+const UNRECOGNIZED = 'unrecognized gateway response';
+
+/** Whether a payload is an object carrying `key` set to one of `values`. */
+function hasLiteral(payload: unknown, key: string, values: string[]): boolean {
+  if (payload === null || typeof payload !== 'object') return false;
+  const actual = (payload as Record<string, unknown>)[key];
+  return typeof actual === 'string' && values.includes(actual);
+}
+
+/**
+ * Read a response as a verdict, fail-closed.
+ *
+ * Only an explicit `outcome: 'allow' | 'deny'` is honoured. An empty 200, a
+ * proxy's error page, a shape the gateway changed under us — anything else
+ * reads as a deny, because a policy boundary that opens when it is confused is
+ * worse than one that refuses. The unparsed payload rides along under
+ * `response` so the cause is still debuggable.
+ */
+function asVerdict(payload: unknown): McpVerdict {
+  if (hasLiteral(payload, 'outcome', ['allow', 'deny'])) return payload as McpVerdict;
+  return { outcome: 'deny', reason: UNRECOGNIZED, response: payload };
+}
+
+/** The run-step analogue of `asVerdict` — an unreadable answer stops the loop. */
+function asRunStep(payload: unknown): McpRunStepDecision {
+  if (hasLiteral(payload, 'decision', ['continue', 'stop'])) {
+    return payload as McpRunStepDecision;
+  }
+  return { decision: 'stop', reason: UNRECOGNIZED, iterations: 0, response: payload };
+}
+
 /**
  * Decode a structured deny into a value. The gateway signals a policy refusal
  * with a 4xx carrying `{ outcome: 'deny', ... }`; anything else — 404 for an
  * un-entitled tenant, 401 for a bad key, a real transport error — rethrows.
+ *
+ * Note this deliberately does *not* fail closed: a 422 that carries no verdict
+ * is a rejected request (a malformed body), and turning the caller's own bug
+ * into a policy deny would hide it. Fail-closed applies to reading a decision
+ * the gateway actually made, which is `asVerdict`'s job.
  */
 function verdictOrThrow(err: unknown): McpVerdict {
   if (err instanceof RouteplaneError && VERDICT_STATUSES.has(err.status)) {
-    const body = err.body;
-    if (body !== null && typeof body === 'object' && (body as McpVerdict).outcome === 'deny') {
-      return body as McpVerdict;
-    }
+    if (hasLiteral(err.body, 'outcome', ['deny'])) return err.body as McpVerdict;
   }
   throw err;
 }
@@ -100,10 +137,7 @@ function verdictOrThrow(err: unknown): McpVerdict {
 /** The run-step analogue of `verdictOrThrow` — a refused step reports `decision: 'stop'`. */
 function stopOrThrow(err: unknown): McpRunStepDecision {
   if (err instanceof RouteplaneError && err.status === 422) {
-    const body = err.body;
-    if (body !== null && typeof body === 'object' && (body as McpRunStepDecision).decision === 'stop') {
-      return body as McpRunStepDecision;
-    }
+    if (hasLiteral(err.body, 'decision', ['stop'])) return err.body as McpRunStepDecision;
   }
   throw err;
 }
@@ -125,7 +159,7 @@ export class McpResource {
     if (opts.serverManifest !== undefined) body.server_manifest = opts.serverManifest;
     if (opts.runId !== undefined) body.run_id = opts.runId;
     try {
-      return await this.client.post<McpVerdict>('/v1/mcp/tool-call/authorize', body);
+      return asVerdict(await this.client.post<unknown>('/v1/mcp/tool-call/authorize', body));
     } catch (err) {
       return verdictOrThrow(err);
     }
@@ -138,7 +172,7 @@ export class McpResource {
    */
   async inspectToolResult(content: string): Promise<McpVerdict> {
     try {
-      return await this.client.post<McpVerdict>('/v1/mcp/tool-result/inspect', { content });
+      return asVerdict(await this.client.post<unknown>('/v1/mcp/tool-result/inspect', { content }));
     } catch (err) {
       return verdictOrThrow(err);
     }
@@ -153,7 +187,7 @@ export class McpResource {
     if (opts.agentId !== undefined) body.agent_id = opts.agentId;
     if (opts.costMicroUsd !== undefined) body.cost_micro_usd = opts.costMicroUsd;
     try {
-      return await this.client.post<McpRunStepDecision>('/v1/mcp/run/step', body);
+      return asRunStep(await this.client.post<unknown>('/v1/mcp/run/step', body));
     } catch (err) {
       return stopOrThrow(err);
     }
@@ -180,7 +214,7 @@ export class McpResource {
     const body: Record<string, unknown> = { server: opts.server, prompt: opts.prompt };
     if (opts.agentId !== undefined) body.agent_id = opts.agentId;
     try {
-      return await this.client.post<McpVerdict>('/v1/mcp/sampling/evaluate', body);
+      return asVerdict(await this.client.post<unknown>('/v1/mcp/sampling/evaluate', body));
     } catch (err) {
       return verdictOrThrow(err);
     }
