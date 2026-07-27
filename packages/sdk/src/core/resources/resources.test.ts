@@ -76,6 +76,13 @@ describe('PromptResource', () => {
     expect(captured[0]?.body).toEqual({ variables: { name: 'bob' } });
   });
 
+  it('render() forwards the missing policy in the body and the cohort as a header', async () => {
+    stubFetch({ text: 'hi' });
+    await client().prompts.render('greet', { name: 'bob' }, { missing: 'empty', cohort: 'user-7' });
+    expect(captured[0]?.body).toEqual({ variables: { name: 'bob' }, missing: 'empty' });
+    expect(captured[0]?.headers['x-routeplane-cohort']).toBe('user-7');
+  });
+
   it('complete() → POST /v1/prompts/{reference}/completions, model in body, provider as header', async () => {
     stubFetch({ id: 'cmpl_1' });
     const out = await client().prompts.complete('greet', {
@@ -88,6 +95,33 @@ describe('PromptResource', () => {
     expect(captured[0]?.body).toEqual({ variables: { name: 'bob' }, model: 'gpt-4o-mini' });
     expect(captured[0]?.headers['x-routeplane-provider']).toBe('anthropic');
     expect(out).toEqual({ id: 'cmpl_1' });
+  });
+
+  it('complete() never routes via the body — provider and cohort go as headers only', async () => {
+    stubFetch({ id: 'cmpl_1' });
+    await client().prompts.complete('greet', { provider: 'groq', cohort: 'user-7' });
+    // The gateway flattens this body into a chat request that ignores unknown
+    // fields, so a routing option left here would be a silent no-op.
+    expect(captured[0]?.body).toEqual({});
+    expect(captured[0]?.headers['x-routeplane-provider']).toBe('groq');
+    expect(captured[0]?.headers['x-routeplane-cohort']).toBe('user-7');
+  });
+
+  it('complete() merges chat overrides into the body, with typed fields winning', async () => {
+    stubFetch({ id: 'cmpl_1' });
+    await client().prompts.complete('greet', {
+      variables: { name: 'bob' },
+      model: 'gpt-4o-mini',
+      missing: 'empty',
+      overrides: { temperature: 0.2, max_tokens: 512, model: 'ignored' },
+    });
+    expect(captured[0]?.body).toEqual({
+      variables: { name: 'bob' },
+      missing: 'empty',
+      model: 'gpt-4o-mini',
+      temperature: 0.2,
+      max_tokens: 512,
+    });
   });
 });
 
@@ -297,6 +331,57 @@ describe('McpResource — enforcement points', () => {
     await client().mcp.evaluateSampling({ agentId: 'a1', server: 'docs', prompt: 'summarize' });
     expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/sampling/evaluate');
     expect(captured[0]?.body).toEqual({ server: 'docs', prompt: 'summarize', agent_id: 'a1' });
+  });
+});
+
+describe('McpResource — fail-closed verdict reading', () => {
+  // A policy boundary that opens when it cannot parse the answer is worse than
+  // one that refuses. Only an explicit allow may read as an allow.
+  const unreadable: [string, unknown][] = [
+    ['an empty 200', {}],
+    ['an unknown outcome', { outcome: 'maybe' }],
+    ['a non-string outcome', { outcome: true }],
+    ['an error page', 'Bad Gateway'],
+    ['a null body', null],
+  ];
+
+  for (const [label, body] of unreadable) {
+    it(`authorizeToolCall() denies on ${label}`, async () => {
+      stubFetch(body);
+      const v = await client().mcp.authorizeToolCall({ server: 'github', tool: 'x' });
+      expect(v.outcome).toBe('deny');
+      expect(v.reason).toBe('unrecognized gateway response');
+    });
+
+    it(`runStep() stops on ${label}`, async () => {
+      stubFetch(body);
+      const out = await client().mcp.runStep({ runId: 'run-1' });
+      expect(out.decision).toBe('stop');
+      expect(out.reason).toBe('unrecognized gateway response');
+    });
+  }
+
+  it('inspectToolResult() and evaluateSampling() deny on an unreadable 200', async () => {
+    stubFetch({ status: 'fine' });
+    const c = client();
+    expect((await c.mcp.inspectToolResult('x')).outcome).toBe('deny');
+    expect((await c.mcp.evaluateSampling({ server: 's', prompt: 'p' })).outcome).toBe('deny');
+  });
+
+  it('preserves the unparsed payload for debugging', async () => {
+    stubFetch({ unexpected: 'shape' });
+    const v = await client().mcp.authorizeToolCall({ server: 'github', tool: 'x' });
+    expect(v.response).toEqual({ unexpected: 'shape' });
+  });
+
+  it('a 422 carrying no verdict still throws, so a malformed request is not hidden', async () => {
+    // Axum rejects an unparseable body with a plain-text 422. Reading that as a
+    // policy deny would bury the caller's own bug.
+    stubFetchStatus(422, 'Failed to deserialize the JSON body');
+    await expect(client().mcp.authorizeToolCall({ server: 'github', tool: 'x' })).rejects.toThrow(
+      RouteplaneError,
+    );
+    await expect(client().mcp.runStep({ runId: 'run-1' })).rejects.toThrow(RouteplaneError);
   });
 });
 

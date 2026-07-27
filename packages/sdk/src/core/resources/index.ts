@@ -1,5 +1,10 @@
 export { PromptResource } from './prompts.js';
-export type { PromptCompleteOptions } from './prompts.js';
+export type {
+  MissingVariablePolicy,
+  PromptCompleteOptions,
+  PromptRenderOptions,
+  PromptVariables,
+} from './prompts.js';
 export { LogResource } from './logs.js';
 export type { LogListOptions } from './logs.js';
 export { FinOpsResource } from './finops.js';

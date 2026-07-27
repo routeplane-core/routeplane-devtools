@@ -10,7 +10,6 @@
  */
 
 import { RouteplaneError } from '@routeplane/sdk/core';
-import type { McpVerdict } from '@routeplane/sdk/core';
 import {
   type ToolDef,
   EMPTY_SCHEMA,
@@ -28,27 +27,41 @@ import {
   enumStr,
 } from './common.js';
 
+/** Whether a payload is an object carrying `key` set to one of `values`. */
+function hasLiteral(payload: unknown, key: string, values: string[]): boolean {
+  if (payload === null || typeof payload !== 'object') return false;
+  const actual = (payload as Record<string, unknown>)[key];
+  return typeof actual === 'string' && values.includes(actual);
+}
+
 /**
  * Run a policy call, returning the deny body rather than an error result when
  * the gateway refuses. A deny is the enforcement point working — surfacing it
  * as a tool error would tell the assistant the gateway broke, when in fact it
  * answered. Statuses outside the deny envelope (404 un-entitled, 401 bad key)
  * still propagate to the caller's error handling.
+ *
+ * Reading the answer is fail-closed. `key` names the verdict field and `allow`
+ * the one value that means "proceed"; anything else the assistant is shown as a
+ * refusal, so a response we cannot parse can never read as permission granted.
  */
-async function verdict(call: () => Promise<unknown>): Promise<unknown> {
+async function verdict(
+  call: () => Promise<unknown>,
+  key: 'outcome' | 'decision',
+  allow: 'allow' | 'continue',
+): Promise<unknown> {
+  const refuse = key === 'outcome' ? 'deny' : 'stop';
+  let payload: unknown;
   try {
-    return await call();
+    payload = await call();
   } catch (err) {
     if (err instanceof RouteplaneError && (err.status === 422 || err.status === 429)) {
-      const body = err.body;
-      if (body !== null && typeof body === 'object' && (body as McpVerdict).outcome === 'deny') {
-        return body;
-      }
-      // run/step reports a refusal as `decision: "stop"` rather than a deny.
-      if (body !== null && typeof body === 'object' && 'decision' in body) return body;
+      if (hasLiteral(err.body, key, [refuse])) return err.body;
     }
     throw err;
   }
+  if (hasLiteral(payload, key, [allow, refuse])) return payload;
+  return { [key]: refuse, reason: 'unrecognized gateway response', response: payload };
 }
 
 const getGuardrailOutcomes: ToolDef = {
@@ -98,7 +111,8 @@ const authorizeToolCall: ToolDef = {
     if (manifest !== undefined) body.server_manifest = manifest;
     const runId = optString(args, 'run_id');
     if (runId !== undefined) body.run_id = runId;
-    return jsonResult(await verdict(() => make().post('/v1/mcp/tool-call/authorize', body)));
+    const call = () => make().post('/v1/mcp/tool-call/authorize', body);
+    return jsonResult(await verdict(call, 'outcome', 'allow'));
   },
 };
 
@@ -109,7 +123,8 @@ const inspectToolResult: ToolDef = {
   inputSchema: objectSchema({ content: str('The tool-result content to inspect.') }, ['content']),
   handler: async (make, args) => {
     const content = requireString(args, 'content');
-    return jsonResult(await verdict(() => make().post('/v1/mcp/tool-result/inspect', { content })));
+    const call = () => make().post('/v1/mcp/tool-result/inspect', { content });
+    return jsonResult(await verdict(call, 'outcome', 'allow'));
   },
 };
 
@@ -132,7 +147,8 @@ const evaluateSampling: ToolDef = {
     };
     const agentId = optString(args, 'agent_id');
     if (agentId !== undefined) body.agent_id = agentId;
-    return jsonResult(await verdict(() => make().post('/v1/mcp/sampling/evaluate', body)));
+    const call = () => make().post('/v1/mcp/sampling/evaluate', body);
+    return jsonResult(await verdict(call, 'outcome', 'allow'));
   },
 };
 
@@ -154,7 +170,8 @@ const mcpRunStep: ToolDef = {
     if (agentId !== undefined) body.agent_id = agentId;
     const cost = optNumber(args, 'cost_micro_usd');
     if (cost !== undefined) body.cost_micro_usd = cost;
-    return jsonResult(await verdict(() => make().post('/v1/mcp/run/step', body)));
+    const call = () => make().post('/v1/mcp/run/step', body);
+    return jsonResult(await verdict(call, 'decision', 'continue'));
   },
 };
 

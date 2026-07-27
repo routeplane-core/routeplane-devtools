@@ -81,6 +81,12 @@ const inspection = await rp.mcp.inspectToolResult(result);
 anomaly operator surface (`anomalyStatus`, `clearAnomaly`), and the enforcement-event feed
 (`securityEvents`).
 
+Reading a verdict is **fail-closed**: only an explicit allow is an allow. An empty body, an
+unknown `outcome`, or a proxy's error page all read as a deny, so a response the client
+cannot parse can never fall through as permission granted. (A 4xx carrying no verdict at
+all still throws — that is a malformed request, and turning your own bug into a policy deny
+would hide it.)
+
 All of it is gated on the tenant's `AgenticSecurity` entitlement. The gateway hides the
 surface rather than refusing it, so an un-entitled key gets `RouteplaneError` with status
 **404** — not a 403.
