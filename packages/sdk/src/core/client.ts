@@ -1,8 +1,9 @@
 /**
  * Zero-dependency HTTP client for the non-OpenAI gateway surfaces (prompts,
- * logs, FinOps, cache, feedback, status). Uses native `fetch`; every request
- * carries `x-routeplane-api-key` plus the client's default `x-routeplane-*`
- * headers, and decodes the response metadata onto errors.
+ * logs, FinOps, cache, feedback, status, MCP agentic security). Uses native
+ * `fetch`; every request carries `x-routeplane-api-key` plus the client's
+ * default `x-routeplane-*` headers, and decodes the response metadata onto
+ * errors.
  */
 
 import { createHeaders, type RouteplaneHeaders } from './headers.js';
@@ -14,6 +15,7 @@ import {
   FeedbackResource,
   FinOpsResource,
   LogResource,
+  McpResource,
   ModelsResource,
   PromptResource,
   ProvidersResource,
@@ -108,6 +110,8 @@ export class RouteplaneCoreClient {
   readonly providers: ProvidersResource;
   /** Analytics resource (`/analytics`). */
   readonly analytics: AnalyticsResource;
+  /** MCP agentic-security resource (`/v1/mcp/*`) — requires the `AgenticSecurity` entitlement. */
+  readonly mcp: McpResource;
 
   constructor(config: RouteplaneConfig) {
     if (!config.apiKey) {
@@ -128,6 +132,7 @@ export class RouteplaneCoreClient {
     this.models = new ModelsResource(this);
     this.providers = new ProvidersResource(this);
     this.analytics = new AnalyticsResource(this);
+    this.mcp = new McpResource(this);
   }
 
   get<T>(path: string, params?: Record<string, string>): Promise<T> {

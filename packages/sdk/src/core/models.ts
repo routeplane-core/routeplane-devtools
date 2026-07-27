@@ -1,6 +1,7 @@
 /**
  * Response models for the non-OpenAI gateway surfaces exposed by the core
- * resource namespaces (prompts, logs, FinOps, residency, providers, analytics).
+ * resource namespaces (prompts, logs, FinOps, residency, providers, analytics,
+ * MCP agentic security).
  *
  * These mirror the gateway's JSON shapes. Fields the gateway is known to return
  * are typed; everything else stays open via an index signature so a gateway that
@@ -86,3 +87,195 @@ export type AnalyticsEvent = Record<string, unknown>;
 
 /** Per-provider latency aggregates (`GET /analytics/latency`). */
 export type LatencyStats = Record<string, unknown>;
+
+// --- MCP agentic security (`/v1/mcp/*`) -----------------------------------
+//
+// Every surface below is gated on the tenant's `AgenticSecurity` entitlement.
+// A tenant without it does not see the surface at all: the gateway answers 404
+// rather than 403, so an un-entitled call raises `RouteplaneError` with status
+// 404 and not a deny verdict.
+
+/**
+ * A policy decision from an MCP enforcement point (tool-call authorization,
+ * tool-result inspection, sampling evaluation).
+ *
+ * A deny is a normal outcome, not a transport failure — the gateway returns it
+ * as HTTP 422 (or 429 for a quota deny), and `McpResource` decodes both into
+ * this verdict rather than throwing. `reason` is secret-free by construction:
+ * the gateway emits a closed-vocabulary label, never matched content.
+ */
+export interface McpVerdict {
+  outcome: 'allow' | 'deny';
+  /** Why the call was refused. Present only on a deny. */
+  reason?: string;
+  /** Milliseconds until the agent's quota window rolls. Quota denies only. */
+  retry_after_ms?: number;
+  /** The configured per-window tool-call ceiling. Quota denies only. */
+  limit?: number;
+  /** The quota window length in milliseconds. Quota denies only. */
+  window_ms?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * The verdict of one agent-loop iteration (`POST /v1/mcp/run/step`). An agent
+ * runtime must halt on `stop` — the run has hit its iteration ceiling, its cost
+ * budget, or an operator kill switch.
+ */
+export interface McpRunStepDecision {
+  decision: 'continue' | 'stop';
+  /** Closed-vocab stop reason (e.g. `IterationCeiling`). Present only on stop. */
+  reason?: string;
+  /** Iterations the run has consumed so far. */
+  iterations: number;
+  [key: string]: unknown;
+}
+
+/** One entry on a run's call graph — an LLM iteration or an authorized tool call. */
+export interface McpAgentStep {
+  /** Per-run monotonic index, stable across ring eviction. */
+  idx: number;
+  kind: 'llm_iteration' | 'tool_call' | string;
+  server?: string;
+  tool?: string;
+  /** `ok`/`denied` for iterations, `allow`/`deny` for tool calls. */
+  outcome: string;
+  cost_micro_usd: number;
+  /** Closed-vocab detail code (a detector code or stop reason) — never content. */
+  detail?: string;
+  [key: string]: unknown;
+}
+
+/** One agent-run summary (`GET /v1/mcp/runs` → `runs[]`). Governance metadata only. */
+export interface McpRunSummary {
+  run_id: string;
+  agent_id: string;
+  tenant_id: string;
+  /** RFC 3339 first-seen timestamp. */
+  started_at: string;
+  /** RFC 3339 last-step timestamp. */
+  updated_at: string;
+  iterations: number;
+  cost_micro_usd: number;
+  status: 'running' | 'stopped' | 'killed' | string;
+  stop_reason?: string;
+  steps?: McpAgentStep[];
+  [key: string]: unknown;
+}
+
+/**
+ * One MCP enforcement event (`GET /v1/mcp/security/events` → `events[]`).
+ * Label-only and secret-free: closed-vocabulary category/outcome/detail codes
+ * plus governance identifiers, never tool arguments or matched content.
+ */
+export interface McpSecurityEvent {
+  /** RFC 3339 timestamp. */
+  ts: string;
+  /** e.g. `mcp_authorize_deny`, `mcp_egress_deny`, `mcp_quota_exceeded`. */
+  category: string;
+  outcome: string;
+  detail?: string;
+  tenant_id: string;
+  agent?: string;
+  server?: string;
+  tool?: string;
+  [key: string]: unknown;
+}
+
+/** A held high-risk tool call awaiting an operator decision (`GET /v1/mcp/hitl/pending`). */
+export interface HitlPendingRequest {
+  id: string;
+  agent_id: string;
+  server: string;
+  tool: string;
+  /** Hash of the argument structure — never the values. */
+  arg_shape: string;
+  risk_labels: string[];
+  status: string;
+  created_millis: number;
+  expires_millis: number;
+  [key: string]: unknown;
+}
+
+/** The result of approving or denying a held call (`POST /v1/mcp/hitl/{approve,deny}`). */
+export interface HitlResolution {
+  id: string;
+  status: 'approved' | 'denied' | string;
+  [key: string]: unknown;
+}
+
+/** Current lifecycle state of a held call (`GET /v1/mcp/hitl/status/{id}`). */
+export interface HitlStatus {
+  id: string;
+  /** `unknown` when the gateway has no such request (expired out of the queue, or never held). */
+  status: 'pending' | 'approved' | 'denied' | 'expired' | 'unknown' | string;
+  [key: string]: unknown;
+}
+
+/**
+ * The attested body of a signed action receipt. Content-free by construction:
+ * arguments and results are bound by hash, never carried.
+ */
+export interface ReceiptBody {
+  schema_version: number;
+  /** Monotonic per-issuer sequence, 1-based from genesis. */
+  seq: number;
+  agent_id: string;
+  run_id: string;
+  server: string;
+  tool: string;
+  /** Hex SHA-256 of the argument structure. */
+  arg_shape: string;
+  /**
+   * The attested decision, as the gateway serializes it. Note the asymmetry
+   * with `ReceiptIssueOptions.decision`, which takes the lowercase request form.
+   */
+  decision: 'Allowed' | 'Denied' | 'HeldForApproval' | string;
+  /** Hex SHA-256 of the tool result bytes; empty for a deny or hold. */
+  result_hash: string;
+  /** RFC 3339 issuance timestamp. */
+  timestamp: string;
+  [key: string]: unknown;
+}
+
+/** A signed, hash-chained action receipt (`POST /v1/mcp/receipt/issue`). */
+export interface SignedReceipt {
+  body: ReceiptBody;
+  /** The previous receipt's `entry_hash`, so a gap or reorder breaks verification. */
+  prev_hash: string;
+  entry_hash: string;
+  /** `PS256` for a Key Vault signer. */
+  algorithm: string;
+  /** Signer key reference (a Key Vault key URI). */
+  key_ref: string;
+  signature: string;
+  [key: string]: unknown;
+}
+
+/** The result of verifying a presented receipt (`POST /v1/mcp/receipt/verify`). */
+export interface ReceiptVerification {
+  /** True only when every check the reported `mode` covers passed. */
+  valid: boolean;
+  /**
+   * `signature` when the signature itself was checked in-process;
+   * `chain_only` when just the hash chain was recomputed (a Key Vault signer is
+   * verified offline against the exported public key).
+   */
+  mode: 'signature' | 'chain_only' | string;
+  [key: string]: unknown;
+}
+
+/** Whether an agent is under a runaway-loop quarantine (`GET /v1/mcp/anomaly/status/{id}`). */
+export interface AnomalyStatus {
+  agent_id: string;
+  quarantined: boolean;
+  [key: string]: unknown;
+}
+
+/** The result of lifting a quarantine (`POST /v1/mcp/anomaly/clear`). */
+export interface AnomalyClearResult {
+  agent_id: string;
+  /** True only if the agent existed and was quarantined. */
+  cleared: boolean;
+  [key: string]: unknown;
+}

@@ -1,5 +1,5 @@
 /**
- * The curated tool catalog — 33 hand-selected gateway operations an AI
+ * The curated tool catalog — 40 hand-selected gateway operations an AI
  * assistant actually needs, grouped by domain.
  */
 

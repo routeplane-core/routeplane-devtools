@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RouteplaneCoreClient } from '../client.js';
+import { RouteplaneCoreClient, RouteplaneError } from '../client.js';
 
 interface Captured {
   url: string;
@@ -24,6 +24,24 @@ function stubFetch(body: unknown, headers?: Record<string, string>): void {
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json', ...(headers ?? {}) },
+    });
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+}
+
+/** As `stubFetch`, but with an explicit status — the gateway answers policy denies with 4xx. */
+function stubFetchStatus(status: number, body: unknown): void {
+  const fn = vi.fn(async (url: string | URL, init?: RequestInit) => {
+    const rawHeaders = (init?.headers ?? {}) as Record<string, string>;
+    captured.push({
+      url: String(url),
+      method: init?.method ?? 'GET',
+      headers: rawHeaders,
+      body: init?.body !== undefined && init.body !== null ? JSON.parse(init.body as string) : undefined,
+    });
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
     });
   });
   globalThis.fetch = fn as unknown as typeof fetch;
@@ -205,6 +223,199 @@ describe('AnalyticsResource', () => {
     stubFetch({});
     await client().analytics.latency();
     expect(captured[0]?.url).toBe('https://api.routeplane.ai/analytics/latency');
+  });
+});
+
+describe('McpResource — enforcement points', () => {
+  it('authorizeToolCall() → POST /v1/mcp/tool-call/authorize with snake_case body', async () => {
+    stubFetch({ outcome: 'allow' });
+    const verdict = await client().mcp.authorizeToolCall({
+      agentId: 'agent-1',
+      server: 'github',
+      tool: 'create_issue',
+      argumentUrls: ['https://api.github.com/repos/x/y/issues'],
+      arguments: { title: 'hi' },
+      serverManifest: '{"tools":[]}',
+      runId: 'run-1',
+    });
+    expect(captured[0]?.method).toBe('POST');
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/tool-call/authorize');
+    expect(captured[0]?.body).toEqual({
+      server: 'github',
+      tool: 'create_issue',
+      agent_id: 'agent-1',
+      argument_urls: ['https://api.github.com/repos/x/y/issues'],
+      arguments: { title: 'hi' },
+      server_manifest: '{"tools":[]}',
+      run_id: 'run-1',
+    });
+    expect(verdict).toEqual({ outcome: 'allow' });
+  });
+
+  it('authorizeToolCall() omits agent_id so a bound key supplies it', async () => {
+    stubFetch({ outcome: 'allow' });
+    await client().mcp.authorizeToolCall({ server: 'github', tool: 'create_issue' });
+    expect(captured[0]?.body).toEqual({ server: 'github', tool: 'create_issue' });
+  });
+
+  it('authorizeToolCall() returns a 422 deny as a verdict instead of throwing', async () => {
+    stubFetchStatus(422, { outcome: 'deny', reason: 'agent not registered' });
+    const verdict = await client().mcp.authorizeToolCall({ server: 'github', tool: 'x' });
+    expect(verdict).toEqual({ outcome: 'deny', reason: 'agent not registered' });
+  });
+
+  it('authorizeToolCall() returns a 429 quota deny with its retry envelope', async () => {
+    stubFetchStatus(429, {
+      outcome: 'deny',
+      reason: 'quota_exceeded',
+      retry_after_ms: 4000,
+      limit: 100,
+      window_ms: 60000,
+    });
+    const verdict = await client().mcp.authorizeToolCall({ server: 'github', tool: 'x' });
+    expect(verdict.outcome).toBe('deny');
+    expect(verdict.retry_after_ms).toBe(4000);
+  });
+
+  it('authorizeToolCall() still throws when the tenant is not entitled (404)', async () => {
+    stubFetchStatus(404, { error: 'not found' });
+    await expect(client().mcp.authorizeToolCall({ server: 'github', tool: 'x' })).rejects.toThrow(
+      RouteplaneError,
+    );
+  });
+
+  it('inspectToolResult() → POST /v1/mcp/tool-result/inspect and decodes a deny', async () => {
+    stubFetchStatus(422, { outcome: 'deny', reason: 'detector: secret_leak' });
+    const verdict = await client().mcp.inspectToolResult('AKIA...');
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/tool-result/inspect');
+    expect(captured[0]?.body).toEqual({ content: 'AKIA...' });
+    expect(verdict.outcome).toBe('deny');
+  });
+
+  it('evaluateSampling() → POST /v1/mcp/sampling/evaluate', async () => {
+    stubFetch({ outcome: 'allow' });
+    await client().mcp.evaluateSampling({ agentId: 'a1', server: 'docs', prompt: 'summarize' });
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/sampling/evaluate');
+    expect(captured[0]?.body).toEqual({ server: 'docs', prompt: 'summarize', agent_id: 'a1' });
+  });
+});
+
+describe('McpResource — run governance', () => {
+  it('runStep() → POST /v1/mcp/run/step with run_id and cost', async () => {
+    stubFetch({ decision: 'continue', iterations: 3 });
+    const out = await client().mcp.runStep({ agentId: 'a1', runId: 'run-1', costMicroUsd: 250 });
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/run/step');
+    expect(captured[0]?.body).toEqual({ run_id: 'run-1', agent_id: 'a1', cost_micro_usd: 250 });
+    expect(out.decision).toBe('continue');
+  });
+
+  it('runStep() returns a 422 stop as a decision instead of throwing', async () => {
+    stubFetchStatus(422, { decision: 'stop', reason: 'agent not registered', iterations: 0 });
+    const out = await client().mcp.runStep({ runId: 'run-1' });
+    expect(out).toEqual({ decision: 'stop', reason: 'agent not registered', iterations: 0 });
+  });
+
+  it('listRuns() → GET /v1/mcp/runs and unwraps `runs`', async () => {
+    stubFetch({ runs: [{ run_id: 'run-1', iterations: 2 }] });
+    const runs = await client().mcp.listRuns();
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/runs');
+    expect(runs).toEqual([{ run_id: 'run-1', iterations: 2 }]);
+  });
+
+  it('securityEvents() → GET /v1/mcp/security/events and unwraps `events`', async () => {
+    stubFetch({ events: [{ category: 'mcp_egress_deny' }] });
+    const events = await client().mcp.securityEvents();
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/security/events');
+    expect(events).toEqual([{ category: 'mcp_egress_deny' }]);
+  });
+});
+
+describe('McpResource — HITL, receipts, anomaly', () => {
+  it('approveHitl()/denyHitl() → POST /v1/mcp/hitl/* with `id` and optional `note`', async () => {
+    stubFetch({ id: 'h1', status: 'approved' });
+    const c = client();
+    await c.mcp.approveHitl('h1');
+    await c.mcp.denyHitl('h2', 'looks like exfil');
+    expect(captured.map((x) => x.url)).toEqual([
+      'https://api.routeplane.ai/v1/mcp/hitl/approve',
+      'https://api.routeplane.ai/v1/mcp/hitl/deny',
+    ]);
+    expect(captured[0]?.body).toEqual({ id: 'h1' });
+    expect(captured[1]?.body).toEqual({ id: 'h2', note: 'looks like exfil' });
+  });
+
+  it('hitlStatus() → GET /v1/mcp/hitl/status/{id} (URL-encoded)', async () => {
+    stubFetch({ id: 'h/1', status: 'pending' });
+    await client().mcp.hitlStatus('h/1');
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/hitl/status/h%2F1');
+  });
+
+  it('listPendingHitl() → GET /v1/mcp/hitl/pending (a bare array)', async () => {
+    stubFetch([{ id: 'h1', tool: 'delete_repo' }]);
+    const pending = await client().mcp.listPendingHitl();
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/hitl/pending');
+    expect(pending).toEqual([{ id: 'h1', tool: 'delete_repo' }]);
+  });
+
+  it('issueReceipt() → POST /v1/mcp/receipt/issue with the lowercase decision', async () => {
+    stubFetch({ body: { seq: 1 }, entry_hash: 'abc' });
+    await client().mcp.issueReceipt({
+      agentId: 'a1',
+      runId: 'run-1',
+      server: 'github',
+      tool: 'create_issue',
+      arguments: { title: 'hi' },
+      decision: 'allowed',
+      result: '{"ok":true}',
+    });
+    expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/mcp/receipt/issue');
+    expect(captured[0]?.body).toEqual({
+      run_id: 'run-1',
+      server: 'github',
+      tool: 'create_issue',
+      decision: 'allowed',
+      agent_id: 'a1',
+      arguments: { title: 'hi' },
+      result: '{"ok":true}',
+    });
+  });
+
+  it('verifyReceipt() → POST /v1/mcp/receipt/verify with the receipt as the body', async () => {
+    stubFetch({ valid: true, mode: 'chain_only' });
+    const receipt = {
+      body: {
+        schema_version: 1,
+        seq: 1,
+        agent_id: 'a1',
+        run_id: 'run-1',
+        server: 'github',
+        tool: 'create_issue',
+        arg_shape: 'deadbeef',
+        decision: 'Allowed' as const,
+        result_hash: '',
+        timestamp: '2026-07-27T00:00:00Z',
+      },
+      prev_hash: 'GENESIS',
+      entry_hash: 'abc',
+      algorithm: 'PS256',
+      key_ref: 'https://kv/keys/k/1',
+      signature: 'sig',
+    };
+    const out = await client().mcp.verifyReceipt(receipt);
+    expect(captured[0]?.body).toEqual(receipt);
+    expect(out).toEqual({ valid: true, mode: 'chain_only' });
+  });
+
+  it('anomalyStatus()/clearAnomaly() → the anomaly operator surface', async () => {
+    stubFetch({ agent_id: 'a 1', quarantined: true });
+    const c = client();
+    await c.mcp.anomalyStatus('a 1');
+    await c.mcp.clearAnomaly('a 1');
+    expect(captured.map((x) => x.url)).toEqual([
+      'https://api.routeplane.ai/v1/mcp/anomaly/status/a%201',
+      'https://api.routeplane.ai/v1/mcp/anomaly/clear',
+    ]);
+    expect(captured[1]?.body).toEqual({ agent_id: 'a 1' });
   });
 });
 
