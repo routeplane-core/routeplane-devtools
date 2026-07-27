@@ -21,6 +21,12 @@ import { runProvidersList } from './commands/providers.js';
 import { runCachePurge } from './commands/cache.js';
 import { runFeedback } from './commands/feedback.js';
 import { runResidency } from './commands/residency.js';
+import {
+  runAgentsRuns,
+  runAgentsEvents,
+  runAgentsPending,
+  runAgentsResolve,
+} from './commands/agents.js';
 import { runLogin } from './commands/login.js';
 import {
   runKeysList,
@@ -238,6 +244,57 @@ program
     const globals = command.optsWithGlobals() as GlobalFlags;
     const conn = resolveConnection(globals);
     await runResidency(conn, resolveOutput(globals, Boolean(options.json)));
+  });
+
+const agents = program
+  .command('agents')
+  .description('agentic security — agent runs, enforcement events, and the approval queue');
+agents
+  .command('runs')
+  .description('list recent agent runs')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    const conn = resolveConnection(globals);
+    await runAgentsRuns(conn, resolveOutput(globals, Boolean(options.json)));
+  });
+agents
+  .command('events')
+  .description('list recent MCP enforcement events (denials)')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    const conn = resolveConnection(globals);
+    await runAgentsEvents(conn, resolveOutput(globals, Boolean(options.json)));
+  });
+agents
+  .command('pending')
+  .description('list tool calls held for human approval')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    const conn = resolveConnection(globals);
+    await runAgentsPending(conn, resolveOutput(globals, Boolean(options.json)));
+  });
+agents
+  .command('approve <id>')
+  .description('approve a held tool call')
+  .option('--note <text>', 'operator note')
+  .option('--json', 'raw JSON output')
+  .action(async (id: string, options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    const conn = resolveConnection(globals);
+    await runAgentsResolve(conn, resolveOutput(globals, Boolean(options.json)), 'approve', id, options.note);
+  });
+agents
+  .command('deny <id>')
+  .description('deny a held tool call')
+  .option('--note <text>', 'operator note')
+  .option('--json', 'raw JSON output')
+  .action(async (id: string, options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    const conn = resolveConnection(globals);
+    await runAgentsResolve(conn, resolveOutput(globals, Boolean(options.json)), 'deny', id, options.note);
   });
 
 // ---------------------------------------------------------------------------

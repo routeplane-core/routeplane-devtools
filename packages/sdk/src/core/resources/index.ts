@@ -14,3 +14,10 @@ export type { ModelListOptions } from './models.js';
 export { ProvidersResource } from './providers.js';
 export type { ProviderCreateOptions } from './providers.js';
 export { AnalyticsResource } from './analytics.js';
+export { McpResource } from './mcp.js';
+export type {
+  AuthorizeToolCallOptions,
+  ReceiptIssueOptions,
+  RunStepOptions,
+  SamplingEvaluateOptions,
+} from './mcp.js';

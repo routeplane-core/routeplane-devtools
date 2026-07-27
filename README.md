@@ -2,13 +2,13 @@
 
 Developer tooling for the [Routeplane](https://routeplane.ai) AI Gateway — a neutral, multi-provider, OpenAI-compatible proxy with sovereign routing, governance, and agentic security.
 
-This is a pnpm + Turborepo monorepo. Phase 1 ships the SDK core; the CLI and MCP server land in later phases.
+This is a pnpm + Turborepo monorepo. All three packages are published.
 
-| Package | What it is | Status |
-| --- | --- | --- |
-| [`@routeplane/sdk`](packages/sdk) | TypeScript SDK — drop-in OpenAI client + zero-dependency core client | **Phase 1 — available** |
-| `@routeplane/cli` | `rp` command-line interface | Phase 2 — placeholder |
-| `@routeplane/mcp-server` | Model Context Protocol server | Phase 3 — placeholder |
+| Package | What it is |
+| --- | --- |
+| [`@routeplane/sdk`](packages/sdk) | TypeScript SDK — drop-in OpenAI client + zero-dependency core client |
+| [`@routeplane/cli`](packages/cli) | `rp` command-line interface |
+| [`@routeplane/mcp-server`](packages/mcp-server) | Model Context Protocol server — 40 gateway operations as tools |
 
 ## The 30-second wow
 
@@ -56,6 +56,38 @@ const usage = await rp.get('/v1/finops/usage', { from: '2026-07-01' });
 const headers = createHeaders({ provider: 'gemini', strategy: 'latency', residency: 'IN' });
 ```
 
+### Agentic security
+
+Wrap every agent tool call in the gateway's default-deny policy boundary. A refusal is a
+verdict rather than a thrown error, so authorization reads as a branch, not a `try`/`catch`:
+
+```ts
+const verdict = await rp.mcp.authorizeToolCall({
+  agentId: 'support-bot',
+  server: 'github',
+  tool: 'create_issue',
+  arguments: { repo: 'acme/api', title: 'Flaky test' },
+});
+if (verdict.outcome === 'deny') throw new Error(verdict.reason);
+
+// ... make the tool call, then screen the result before the model sees it:
+const inspection = await rp.mcp.inspectToolResult(result);
+```
+
+`rp.mcp` covers the whole surface: the two enforcement points (`authorizeToolCall`,
+`inspectToolResult`), run governance (`runStep`, `listRuns`), sampling defense
+(`evaluateSampling`), the human-in-the-loop queue (`listPendingHitl`, `hitlStatus`,
+`approveHitl`, `denyHitl`), signed action receipts (`issueReceipt`, `verifyReceipt`), the
+anomaly operator surface (`anomalyStatus`, `clearAnomaly`), and the enforcement-event feed
+(`securityEvents`).
+
+All of it is gated on the tenant's `AgenticSecurity` entitlement. The gateway hides the
+surface rather than refusing it, so an un-entitled key gets `RouteplaneError` with status
+**404** — not a 403.
+
+The same surfaces are available from the CLI (`rp agents runs | events | pending | approve
+| deny`) and as MCP-server tools.
+
 ## Examples
 
 Runnable snippets live in [`examples/`](examples):
@@ -67,6 +99,7 @@ Runnable snippets live in [`examples/`](examples):
 | [`streaming.ts`](examples/streaming.ts) | Streaming with the gateway's decision metadata |
 | [`vercel-ai-sdk.ts`](examples/vercel-ai-sdk.ts) | Vercel AI SDK (`@ai-sdk/openai`) integration |
 | [`resources.ts`](examples/resources.ts) | Non-OpenAI surfaces — status, logs, FinOps, prompts, cache |
+| [`agentic-security.ts`](examples/agentic-security.ts) | Guarding an agent loop — tool-call authorization, result inspection, run breakers, receipts |
 
 See [`examples/`](examples) for more.
 
