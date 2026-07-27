@@ -33,6 +33,12 @@ export const ROUTING_STRATEGIES = [
   'round_robin',
   /** Fewest in-flight requests first. */
   'least_busy',
+  /**
+   * A/B between the first two candidates in the chain. Requires
+   * `canaryShareBps`; without it, ordering is identical to `priority`.
+   * The gateway also accepts the aliases `ab` / `a-b`.
+   */
+  'canary',
 ] as const;
 
 export type RoutingStrategy = (typeof ROUTING_STRATEGIES)[number];
@@ -45,6 +51,24 @@ export interface RouteplaneHeaders {
   residency?: string;
   /** `x-routeplane-strategy` — candidate ordering strategy. */
   strategy?: RoutingStrategy;
+  /**
+   * `x-routeplane-canary-share` — candidate share for `strategy: 'canary'`, in
+   * **basis points (1/10000)**.
+   *
+   * The name says `Bps` because the unit is the whole trap here: `500` is 5%,
+   * and `10` is 0.1% — NOT 10%.
+   *
+   * Only read when `strategy` is `'canary'` and the provider chain has at least
+   * two candidates; absent or `0` disables the experiment and ordering is
+   * identical to `priority`. The candidate arm is the SECOND entry in
+   * `provider`.
+   *
+   * Assignment is deterministic per virtual KEY, not per request — the split is
+   * across keys, and raising the share only ever moves keys onto the candidate,
+   * never back. Read the serving provider off the `x-routeplane-provider`
+   * response header to see which arm ran.
+   */
+  canaryShareBps?: number;
   /** `x-routeplane-config` — inline routing config; JSON-serialized. */
   config?: Record<string, unknown>;
   /** `x-routeplane-timeout-ms` — per-request upstream timeout budget. */
@@ -113,6 +137,7 @@ export function createHeaders(opts: RouteplaneHeaders = {}): Record<string, stri
   if (opts.provider !== undefined) set('provider', opts.provider);
   if (opts.residency !== undefined) set('residency', opts.residency);
   if (opts.strategy !== undefined) set('strategy', opts.strategy);
+  if (opts.canaryShareBps !== undefined) set('canary-share', String(opts.canaryShareBps));
   if (opts.config !== undefined) set('config', JSON.stringify(opts.config));
   if (opts.timeoutMs !== undefined) set('timeout-ms', String(opts.timeoutMs));
   if (opts.useCase !== undefined) set('use-case', opts.useCase);
