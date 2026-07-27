@@ -7,7 +7,35 @@
  * knows the wire names — every client in this package builds its headers here.
  */
 
-export type RoutingStrategy = 'priority' | 'weighted' | 'cost' | 'latency';
+/**
+ * Candidate ordering strategies the gateway accepts on `x-routeplane-strategy`.
+ *
+ * SINGLE SOURCE OF TRUTH for this package and its consumers — the MCP server
+ * derives both its input schema and its runtime guard from this list. It was
+ * previously hand-copied in three places and had drifted: `round_robin` and
+ * `least_busy` shipped in the gateway but were unusable from the SDK and the MCP
+ * tools because the copies were never updated.
+ *
+ * Unknown values are not an error at the gateway — it falls back to `priority` —
+ * but they are rejected here so a typo surfaces at the call site instead of
+ * silently changing routing behaviour.
+ */
+export const ROUTING_STRATEGIES = [
+  /** Try candidates in the given fallback-chain order. */
+  'priority',
+  /** Randomized proportional to per-provider weight. */
+  'weighted',
+  /** Cheapest first. */
+  'cost',
+  /** Lowest observed latency first. */
+  'latency',
+  /** Rotate through healthy candidates with a lock-free cursor. */
+  'round_robin',
+  /** Fewest in-flight requests first. */
+  'least_busy',
+] as const;
+
+export type RoutingStrategy = (typeof ROUTING_STRATEGIES)[number];
 export type LogLevel = 'metadata' | 'none' | 'full';
 
 export interface RouteplaneHeaders {

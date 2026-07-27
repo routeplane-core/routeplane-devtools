@@ -21,6 +21,7 @@ import {
   enumStr,
   textResult,
 } from './common.js';
+import { ROUTING_STRATEGIES } from '@routeplane/sdk/core';
 
 const DEFAULT_CHAT_MODEL = 'gpt-4o';
 const DEFAULT_EMBED_MODEL = 'text-embedding-3-small';
@@ -93,7 +94,7 @@ const chatCompletion: ToolDef = {
       model: str(`Model id. Default "${DEFAULT_CHAT_MODEL}".`),
       stream: bool('Stream the response and return the assembled text.'),
       provider: str('Provider or comma-separated fallback chain (e.g. "openai,anthropic").'),
-      strategy: enumStr(['priority', 'weighted', 'cost', 'latency'], 'Candidate ordering strategy.'),
+      strategy: enumStr([...ROUTING_STRATEGIES], 'Candidate ordering strategy.'),
       residency: str('Requested data-residency region (e.g. "IN").'),
     },
     ['messages'],

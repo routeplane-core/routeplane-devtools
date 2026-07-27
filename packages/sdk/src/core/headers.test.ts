@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createHeaders, mergeHeaders } from './headers.js';
+import { ROUTING_STRATEGIES, createHeaders, mergeHeaders } from './headers.js';
 
 describe('createHeaders', () => {
   it('maps known fields to their x-routeplane-* wire names', () => {
@@ -72,5 +72,27 @@ describe('mergeHeaders', () => {
   it('lets later fields win', () => {
     const merged = mergeHeaders({ provider: 'openai', strategy: 'priority' }, { strategy: 'latency' });
     expect(merged).toEqual({ provider: 'openai', strategy: 'latency' });
+  });
+});
+
+describe('routing strategies', () => {
+  it('emits every gateway-supported strategy', () => {
+    // Regression: round_robin and least_busy shipped in the gateway but were
+    // absent from this union (and from the MCP tool schema), so callers could not
+    // select them without casting.
+    for (const s of ROUTING_STRATEGIES) {
+      expect(createHeaders({ strategy: s })['x-routeplane-strategy']).toBe(s);
+    }
+  });
+
+  it('covers the six the gateway parses', () => {
+    expect([...ROUTING_STRATEGIES]).toEqual([
+      'priority',
+      'weighted',
+      'cost',
+      'latency',
+      'round_robin',
+      'least_busy',
+    ]);
   });
 });
