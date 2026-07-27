@@ -67,6 +67,14 @@ export interface RouteplaneHeaders {
    * across keys, and raising the share only ever moves keys onto the candidate,
    * never back. Read the serving provider off the `x-routeplane-provider`
    * response header to see which arm ran.
+   *
+   * ⚠️ Every provider in the chain must be able to serve the requested `model`.
+   * A request carries one model name, and promoting the candidate sends that same
+   * name to a different provider — so a chain across providers with disjoint
+   * model namespaces fails on the candidate arm and ONLY on the candidate arm.
+   * Because assignment is per-key, at a low share that looks like an intermittent
+   * provider fault rather than a config error, and ramping down does not move
+   * already-assigned keys back.
    */
   canaryShareBps?: number;
   /** `x-routeplane-config` — inline routing config; JSON-serialized. */
