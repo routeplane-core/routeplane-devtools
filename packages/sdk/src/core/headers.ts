@@ -52,7 +52,7 @@ export interface RouteplaneHeaders {
   /** `x-routeplane-strategy` — candidate ordering strategy. */
   strategy?: RoutingStrategy;
   /**
-   * `x-routeplane-canary-share` — candidate share for `strategy: 'canary'`, in
+   * `x-routeplane-canary-share-bps` — candidate share for `strategy: 'canary'`, in
    * **basis points (1/10000)**.
    *
    * The name says `Bps` because the unit is the whole trap here: `500` is 5%,
@@ -137,7 +137,7 @@ export function createHeaders(opts: RouteplaneHeaders = {}): Record<string, stri
   if (opts.provider !== undefined) set('provider', opts.provider);
   if (opts.residency !== undefined) set('residency', opts.residency);
   if (opts.strategy !== undefined) set('strategy', opts.strategy);
-  if (opts.canaryShareBps !== undefined) set('canary-share', String(opts.canaryShareBps));
+  if (opts.canaryShareBps !== undefined) set('canary-share-bps', String(opts.canaryShareBps));
   if (opts.config !== undefined) set('config', JSON.stringify(opts.config));
   if (opts.timeoutMs !== undefined) set('timeout-ms', String(opts.timeoutMs));
   if (opts.useCase !== undefined) set('use-case', opts.useCase);
