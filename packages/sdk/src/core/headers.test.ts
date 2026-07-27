@@ -102,11 +102,11 @@ describe('canary share', () => {
   it('emits the share header for a canary experiment', () => {
     const h = createHeaders({ provider: 'openai,anthropic', strategy: 'canary', canaryShareBps: 500 });
     expect(h['x-routeplane-strategy']).toBe('canary');
-    expect(h['x-routeplane-canary-share']).toBe('500');
+    expect(h['x-routeplane-canary-share-bps']).toBe('500');
   });
 
   it('omits the header entirely when not set', () => {
-    expect(createHeaders({ strategy: 'canary' })['x-routeplane-canary-share']).toBeUndefined();
+    expect(createHeaders({ strategy: 'canary' })['x-routeplane-canary-share-bps']).toBeUndefined();
   });
 
   // 0 is the gateway's "experiment off" value and must still be SENT rather than
@@ -114,6 +114,6 @@ describe('canary share', () => {
   // turn an explicit ramp-to-zero into "no header", which reads identically to
   // "never configured" and would strand callers on the candidate arm.
   it('emits an explicit zero rather than dropping it', () => {
-    expect(createHeaders({ canaryShareBps: 0 })['x-routeplane-canary-share']).toBe('0');
+    expect(createHeaders({ canaryShareBps: 0 })['x-routeplane-canary-share-bps']).toBe('0');
   });
 });
