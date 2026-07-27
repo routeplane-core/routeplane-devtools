@@ -4,7 +4,7 @@
  * inputs, argument validators, and result/error formatting.
  */
 
-import { RouteplaneCoreClient, RouteplaneError } from '@routeplane/sdk/core';
+import { ROUTING_STRATEGIES, RouteplaneCoreClient, RouteplaneError } from '@routeplane/sdk/core';
 import type { RouteplaneHeaders } from '@routeplane/sdk/core';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
@@ -162,8 +162,8 @@ export function routingHeaders(args: Record<string, unknown>): RouteplaneHeaders
   const residency = optString(args, 'residency');
   if (residency !== undefined) headers.residency = residency;
   const strategy = optString(args, 'strategy');
-  if (strategy === 'priority' || strategy === 'weighted' || strategy === 'cost' || strategy === 'latency') {
-    headers.strategy = strategy;
+  if (strategy !== undefined && (ROUTING_STRATEGIES as readonly string[]).includes(strategy)) {
+    headers.strategy = strategy as (typeof ROUTING_STRATEGIES)[number];
   }
   return headers;
 }
