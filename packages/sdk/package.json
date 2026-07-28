@@ -1,7 +1,7 @@
 {
   "name": "@routeplane/sdk",
-  "version": "0.3.0",
-  "description": "TypeScript SDK for the Routeplane AI Gateway — a drop-in OpenAI client plus a zero-dependency core client and typed x-routeplane-* header builder.",
+  "version": "0.4.0",
+  "description": "TypeScript SDK for the Routeplane AI Gateway \u2014 a drop-in OpenAI client plus a zero-dependency core client and typed x-routeplane-* header builder.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
