@@ -8,6 +8,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # npm provenance: the attestation binds the published tarball to this
+      # workflow run via an OIDC token. Composes with NODE_AUTH_TOKEN auth.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -22,3 +25,7 @@ jobs:
       - run: pnpm -r publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Publish with a provenance attestation (Sigstore, via the job's OIDC
+          # id-token) so every @routeplane/* release is publicly verifiable
+          # back to this repo + workflow run.
+          NPM_CONFIG_PROVENANCE: 'true'

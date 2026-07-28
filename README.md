@@ -2,7 +2,10 @@
 
 Developer tooling for the [Routeplane](https://routeplane.ai) AI Gateway — a neutral, multi-provider, OpenAI-compatible proxy with sovereign routing, governance, and agentic security.
 
-This is a pnpm + Turborepo monorepo. All three packages are published.
+This is a pnpm + Turborepo monorepo. All three packages are published with
+[npm provenance attestations](https://docs.npmjs.com/generating-provenance-statements),
+so every release is publicly verifiable back to the exact repository state and
+CI run that built it.
 
 | Package | What it is |
 | --- | --- |
