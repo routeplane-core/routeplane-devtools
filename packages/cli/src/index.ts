@@ -27,6 +27,7 @@ import {
   runAgentsPending,
   runAgentsResolve,
 } from './commands/agents.js';
+import { runEval, runEvalRubrics, SuiteError } from './commands/eval.js';
 import { runLogin } from './commands/login.js';
 import {
   runKeysList,
@@ -407,11 +408,46 @@ tenants
     });
   });
 
+const evaluate = program
+  .command('eval')
+  .description('run an evaluation suite (deterministic — calls no model)');
+evaluate
+  .command('run <suite-file>', { isDefault: true })
+  .description('score a JSON suite file and gate on its thresholds')
+  .option('--json', 'raw JSON output')
+  .action(async (suiteFile: string, options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    const conn = resolveConnection(globals);
+    await runEval(conn, resolveOutput(globals, Boolean(options.json)), suiteFile);
+  });
+evaluate
+  .command('rubrics')
+  .description('list the built-in judge rubrics')
+  .option('--category <category>', 'filter to one category (e.g. security)')
+  .option('--json', 'raw JSON output')
+  .action(async (options, command: Command) => {
+    const globals = command.optsWithGlobals() as GlobalFlags;
+    const conn = resolveConnection(globals);
+    await runEvalRubrics(
+      conn,
+      resolveOutput(globals, Boolean(options.json)),
+      options.category as string | undefined,
+    );
+  });
+
 async function main(): Promise<void> {
   await program.parseAsync(process.argv);
 }
 
 main().catch((err: unknown) => {
+  // A broken suite file exits 2, distinct from the 1 a missed threshold uses.
+  // A build gate has to tell "quality dropped" from "the config is wrong": the
+  // first should fail the build loudly, the second is a bug in the gate itself,
+  // and collapsing both into 1 trains people to ignore the signal.
+  if (err instanceof SuiteError) {
+    process.stderr.write(`${red('Error')}: ${err.message}\n`);
+    process.exit(2);
+  }
   if (err instanceof RouteplaneError) {
     const rid = err.requestId ? dim(` (request ${err.requestId})`) : '';
     process.stderr.write(`${red('Error')}: ${err.message}${rid}\n`);

@@ -97,6 +97,61 @@ surface rather than refusing it, so an un-entitled key gets `RouteplaneError` wi
 The same surfaces are available from the CLI (`rp agents runs | events | pending | approve
 | deny`) and as MCP-server tools.
 
+### Evals in CI
+
+`rp eval` scores your outputs against a suite file and fails the build when quality drops. It
+is **deterministic** — no model is called, so a run costs nothing per case and scores
+identically every time. A gate that is itself non-deterministic is not a gate.
+
+```bash
+rp eval run eval-suite.json
+```
+
+```
+EVALUATOR                  N  PASSED  SKIPPED  MEAN   THRESHOLD  GATE
+valid_json                 3  3                1.000             —
+canonical_json_match       2  1       1        0.500  0.950      FAIL
+trajectory_superset_match  1  1       2        1.000  1.000      PASS
+```
+
+Exit codes are the point: **0** all thresholds met, **1** a threshold was missed, **2** the
+suite file or the request was rejected. A build gate has to tell "quality dropped" from "the
+config is wrong" — collapsing both into one code trains people to ignore the signal.
+
+Two behaviours worth knowing:
+
+- **A missing input is a skip, not a failure.** A case with no `reference` cannot be
+  exact-matched; it is reported as skipped and excluded from the means. Counting it as 0
+  would blend "we did not check this" into "this was wrong" and read as a regression that
+  never happened.
+- **An evaluator with no threshold is reported but never fails the run.** Reporting and
+  gating are separate decisions; conflating them makes people delete checks instead of
+  fixing them.
+
+`trajectory_match` compares the tool calls an agent made against a reference run — message
+content is never compared, so a reworded explanation is the same trajectory. `superset` is
+the one that catches a *dropped* step:
+
+```json
+{
+  "type": "trajectory_match",
+  "match_mode": "superset",
+  "overrides": { "issue_refund": { "type": "on_keys", "paths": ["order_id"] } }
+}
+```
+
+The per-tool `on_keys` override is what makes this usable on a real agent: pin the order id,
+ignore the timestamp that changes every run.
+
+`rp eval rubrics` lists the built-in judge rubrics. Those are scored by an operator-armed
+evaluation run on the gateway, not by `rp eval`.
+
+From the SDK:
+
+```ts
+const report = await client.evaluations.score(cases, [{ type: 'valid_json' }]);
+```
+
 ## Examples
 
 Runnable snippets live in [`examples/`](examples):
@@ -109,6 +164,7 @@ Runnable snippets live in [`examples/`](examples):
 | [`vercel-ai-sdk.ts`](examples/vercel-ai-sdk.ts) | Vercel AI SDK (`@ai-sdk/openai`) integration |
 | [`resources.ts`](examples/resources.ts) | Non-OpenAI surfaces — status, logs, FinOps, prompts, cache |
 | [`agentic-security.ts`](examples/agentic-security.ts) | Guarding an agent loop — tool-call authorization, result inspection, run breakers, receipts |
+| [`eval-suite.json`](examples/eval-suite.json) | A `rp eval` suite — JSON/text checks, a trajectory comparison, and gate thresholds |
 
 See [`examples/`](examples) for more.
 

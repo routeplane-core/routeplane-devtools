@@ -1,0 +1,56 @@
+{
+  "name": "support-assistant regression suite",
+  "cases": [
+    {
+      "id": "extracts-order-fields",
+      "output": "{\"order_id\":\"A-1042\",\"status\":\"shipped\",\"eta_days\":3}",
+      "reference": "{\"status\":\"shipped\",\"order_id\":\"A-1042\",\"eta_days\":3}"
+    },
+    {
+      "id": "answers-concisely",
+      "output": "Your order ships Tuesday.",
+      "reference": "It ships on Tuesday."
+    },
+    {
+      "id": "agent-still-verifies-before-refunding",
+      "output": "",
+      "trajectory": [
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            { "name": "verify_customer", "arguments": "{\"order_id\":\"A-1042\"}" },
+            { "name": "issue_refund", "arguments": "{\"order_id\":\"A-1042\",\"amount\":49.0}" }
+          ]
+        }
+      ],
+      "reference_trajectory": [
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            { "name": "verify_customer", "arguments": "{\"order_id\":\"A-1042\"}" },
+            { "name": "issue_refund", "arguments": "{\"order_id\":\"A-1042\",\"amount\":49.0}" }
+          ]
+        }
+      ]
+    }
+  ],
+  "evaluators": [
+    { "type": "valid_json" },
+    { "type": "canonical_json_match" },
+    { "type": "levenshtein_similarity", "threshold": 0.6 },
+    {
+      "type": "trajectory_match",
+      "match_mode": "superset",
+      "tool_args_match_mode": "exact",
+      "overrides": {
+        "issue_refund": { "type": "on_keys", "paths": ["order_id"] }
+      }
+    }
+  ],
+  "thresholds": {
+    "canonical_json_match": 0.5,
+    "trajectory_superset_match": 1.0
+  }
+}
