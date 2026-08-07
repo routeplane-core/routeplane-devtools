@@ -88,6 +88,75 @@ export type AnalyticsEvent = Record<string, unknown>;
 /** Per-provider latency aggregates (`GET /analytics/latency`). */
 export type LatencyStats = Record<string, unknown>;
 
+// --- Evaluations (`/v1/evaluations/*`) ------------------------------------
+//
+// Gated on the tenant's `evaluations` entitlement. A tenant without it gets a
+// 403, which surfaces here as a `RouteplaneError`.
+
+/** One evaluator's verdict on one case. */
+export interface EvalScore {
+  /** The closed-vocabulary evaluator code, e.g. `valid_json`. */
+  evaluator: string;
+  /** Whether the check passed. Absent when the check was skipped. */
+  passed?: boolean;
+  /** The score in `[0, 1]`. Absent when the check was skipped. */
+  score?: number;
+  /**
+   * Set when the case lacked the input this check needs.
+   *
+   * A skip is NOT a failure, and it is excluded from the summary's rates —
+   * counting it as 0 would blend "we did not check this" into "this was wrong"
+   * and read as a quality regression that never happened.
+   */
+  skipped?: boolean;
+  /** Why it was skipped, e.g. `missing_reference`. */
+  reason?: string;
+}
+
+/** All evaluator verdicts for one case. */
+export interface EvalCaseResult {
+  /** Your `id` from the request, or the case's index when you sent none. */
+  case_id: string;
+  scores: EvalScore[];
+}
+
+/** Per-evaluator totals across every case in one request. */
+export interface EvalEvaluatorSummary {
+  evaluator: string;
+  /** Cases actually scored (excludes skips). */
+  n: number;
+  n_passed: number;
+  n_skipped: number;
+  pass_rate: number;
+  mean_score: number;
+}
+
+/** `POST /v1/evaluations/score`. */
+export interface EvalScoreResponse {
+  results: EvalCaseResult[];
+  summary: { by_evaluator: EvalEvaluatorSummary[] };
+  note?: string;
+}
+
+/** One built-in judge rubric. */
+export interface Rubric {
+  /** The closed-vocabulary code, e.g. `rag_groundedness`. */
+  code: string;
+  /** Its family: quality, rag, safety, security, trajectory, conversation, image, voice. */
+  category: string;
+  /** The variables this rubric requires to render. */
+  variables: string[];
+}
+
+/** `GET /v1/evaluations/rubrics`. */
+export interface RubricCatalog {
+  rubrics: Rubric[];
+  note?: string;
+}
+
+/** `GET /v1/evaluations` — past judge scores. Row shape is gateway-defined. */
+export type EvaluationsPage = Record<string, unknown>;
+
 // --- MCP agentic security (`/v1/mcp/*`) -----------------------------------
 //
 // Every surface below is gated on the tenant's `AgenticSecurity` entitlement.
