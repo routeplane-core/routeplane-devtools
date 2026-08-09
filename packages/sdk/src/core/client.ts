@@ -11,6 +11,7 @@ import { parseResponseMeta, type RouteplaneMeta } from './types.js';
 import { parseSSEStream } from './streaming.js';
 import {
   AnalyticsResource,
+  EvaluationsResource,
   CacheResource,
   FeedbackResource,
   FinOpsResource,
@@ -112,6 +113,8 @@ export class RouteplaneCoreClient {
   readonly analytics: AnalyticsResource;
   /** MCP agentic-security resource (`/v1/mcp/*`) — requires the `AgenticSecurity` entitlement. */
   readonly mcp: McpResource;
+  /** Evaluations resource (`/v1/evaluations/*`) — requires the `evaluations` entitlement. */
+  readonly evaluations: EvaluationsResource;
 
   constructor(config: RouteplaneConfig) {
     if (!config.apiKey) {
@@ -133,6 +136,7 @@ export class RouteplaneCoreClient {
     this.providers = new ProvidersResource(this);
     this.analytics = new AnalyticsResource(this);
     this.mcp = new McpResource(this);
+    this.evaluations = new EvaluationsResource(this);
   }
 
   get<T>(path: string, params?: Record<string, string>): Promise<T> {

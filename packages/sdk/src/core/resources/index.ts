@@ -19,6 +19,15 @@ export type { ModelListOptions } from './models.js';
 export { ProvidersResource } from './providers.js';
 export type { ProviderCreateOptions } from './providers.js';
 export { AnalyticsResource } from './analytics.js';
+export { EvaluationsResource } from './evaluations.js';
+export type {
+  EvalCase,
+  EvalMessage,
+  EvalToolCall,
+  EvaluationsListOptions,
+  EvaluatorSpec,
+  ToolArgsMatcher,
+} from './evaluations.js';
 export { McpResource } from './mcp.js';
 export type {
   AuthorizeToolCallOptions,
