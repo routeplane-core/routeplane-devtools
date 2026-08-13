@@ -60,6 +60,7 @@ jobs:
   publish:
     needs: verify
     runs-on: ubuntu-latest
+    environment: npm
     permissions:
       contents: read
       # npm exchanges this job identity for a short-lived publish credential.

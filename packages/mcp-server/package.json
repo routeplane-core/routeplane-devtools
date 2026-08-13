@@ -1,6 +1,6 @@
 {
   "name": "@routeplane/mcp-server",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Model Context Protocol server for the Routeplane AI Gateway (Phase 3 \u2014 placeholder).",
   "license": "Apache-2.0",
   "repository": {
