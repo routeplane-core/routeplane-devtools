@@ -84,6 +84,6 @@ jobs:
           version="${RELEASE_TAG#v}"
           test "$(npm --version)" = "11.17.0"
           test "$(find release -maxdepth 1 -type f -name '*.tgz' | wc -l)" -eq 3
-          npm publish "release/routeplane-sdk-${version}.tgz" --access public --ignore-scripts
-          npm publish "release/routeplane-cli-${version}.tgz" --access public --ignore-scripts
-          npm publish "release/routeplane-mcp-server-${version}.tgz" --access public --ignore-scripts
+          npm publish "./release/routeplane-sdk-${version}.tgz" --access public --ignore-scripts
+          npm publish "./release/routeplane-cli-${version}.tgz" --access public --ignore-scripts
+          npm publish "./release/routeplane-mcp-server-${version}.tgz" --access public --ignore-scripts
