@@ -29,6 +29,7 @@ import {
 } from './commands/agents.js';
 import { runEval, runEvalRubrics, SuiteError } from './commands/eval.js';
 import { runLogin } from './commands/login.js';
+import { runAdoptVerify } from './commands/adopt.js';
 import {
   runKeysList,
   runKeysCreate,
@@ -38,6 +39,7 @@ import {
 import { runTenantsList, runTenantsGet, runTenantsCreate } from './commands/tenants.js';
 import { resolveConnection, resolveOutput, ResolutionError, type GlobalFlags } from './resolve.js';
 import { dim, red } from './output.js';
+import { CLI_VERSION } from './version.js';
 
 /** The active profile name from the global `--profile` flag (default `default`). */
 function profileOf(globals: GlobalFlags): string {
@@ -65,11 +67,26 @@ const program = new Command();
 program
   .name('rp')
   .description('Routeplane AI Gateway CLI')
-  .version('0.1.0')
+  .version(CLI_VERSION)
   .option('--profile <name>', 'config profile to use', 'default')
   .option('--base-url <url>', 'override the gateway base URL')
   .option('--api-key <key>', 'override the API key (or set ROUTEPLANE_API_KEY)')
   .option('--output <format>', 'output format: table | json', 'table');
+
+const adopt = program.command('adopt').description('verify and report a local Routeplane adoption');
+adopt
+  .command('verify')
+  .description('verify one local health response and optionally submit a minimal receipt')
+  .requiredOption('--challenge <token>', 'single-use activation challenge')
+  .requiredOption('--base-url <url>', 'HTTP loopback Routeplane base URL')
+  .option('--yes', 'submit without an interactive confirmation')
+  .action(async (options) => {
+    await runAdoptVerify({
+      challenge: options.challenge as string,
+      baseUrl: options.baseUrl as string,
+      yes: Boolean(options.yes),
+    });
+  });
 
 program
   .command('init')
