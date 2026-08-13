@@ -3,29 +3,88 @@ on:
   push:
     tags: ['v*']
 
+permissions: {}
+
 jobs:
-  publish:
+  verify:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # npm provenance: the attestation binds the published tarball to this
-      # workflow run via an OIDC token. Composes with NODE_AUTH_TOKEN auth.
-      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          node-version: 20
-          registry-url: 'https://registry.npmjs.org'
-          cache: pnpm
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
-      - run: pnpm -r publish --access public --no-git-checks
+      - run: pnpm lint
+      - name: Verify tag matches every package version
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # Publish with a provenance attestation (Sigstore, via the job's OIDC
-          # id-token) so every @routeplane/* release is publicly verifiable
-          # back to this repo + workflow run.
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          version="${RELEASE_TAG#v}"
+          test "v${version}" = "${RELEASE_TAG}"
+          for manifest in packages/sdk/package.json packages/cli/package.json packages/mcp-server/package.json; do
+            test "$(node -p "require('./${manifest}').version")" = "${version}"
+          done
+      - name: Pack release artifacts
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          mkdir release
+          pnpm --filter @routeplane/sdk pack --pack-destination "$GITHUB_WORKSPACE/release"
+          pnpm --filter @routeplane/cli pack --pack-destination "$GITHUB_WORKSPACE/release"
+          pnpm --filter @routeplane/mcp-server pack --pack-destination "$GITHUB_WORKSPACE/release"
+          test -f "release/routeplane-sdk-${version}.tgz"
+          test -f "release/routeplane-cli-${version}.tgz"
+          test -f "release/routeplane-mcp-server-${version}.tgz"
+          test "$(find release -maxdepth 1 -type f -name '*.tgz' | wc -l)" -eq 3
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-tarballs
+          path: release/*.tgz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      # npm exchanges this job identity for a short-lived publish credential.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-tarballs
+          path: release
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Node 24.19.0 bundles npm 11.17.0, which supports Trusted Publishing.
+          node-version: 24.19.0
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Publish with npm Trusted Publishing
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
           NPM_CONFIG_PROVENANCE: 'true'
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          test "$(npm --version)" = "11.17.0"
+          test "$(find release -maxdepth 1 -type f -name '*.tgz' | wc -l)" -eq 3
+          npm publish "./release/routeplane-sdk-${version}.tgz" --access public --ignore-scripts
+          npm publish "./release/routeplane-cli-${version}.tgz" --access public --ignore-scripts
+          npm publish "./release/routeplane-mcp-server-${version}.tgz" --access public --ignore-scripts
