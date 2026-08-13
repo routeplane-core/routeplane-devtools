@@ -1,6 +1,6 @@
 {
   "name": "@routeplane/cli",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Command-line interface (rp) for the Routeplane AI Gateway \u2014 chat, status, and model catalog with profile-based config.",
   "license": "Apache-2.0",
   "repository": {
