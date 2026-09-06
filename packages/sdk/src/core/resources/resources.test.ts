@@ -179,12 +179,12 @@ describe('CacheResource / FeedbackResource', () => {
     expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/cache/purge');
   });
 
-  it('feedback.create() → POST /v1/feedback with snake_case body', async () => {
+  it('feedback.create() → POST /v1/feedback with legacy trace_id/value body', async () => {
     stubFetch({});
-    await client().feedback.create({ requestId: 'req_9', score: 1, comment: 'good' });
+    await client().feedback.create({ requestId: 'req_9', score: 1 });
     expect(captured[0]?.method).toBe('POST');
     expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/feedback');
-    expect(captured[0]?.body).toEqual({ request_id: 'req_9', score: 1, comment: 'good' });
+    expect(captured[0]?.body).toEqual({ trace_id: 'req_9', value: 1 });
   });
 });
 
