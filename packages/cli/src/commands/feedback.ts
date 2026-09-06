@@ -1,5 +1,5 @@
 /**
- * `rp feedback` — attach a quality score (and optional comment) to a prior
+ * `rp feedback` — submit a legacy integer quality score for a prior
  * request via `POST /v1/feedback`.
  */
 
@@ -10,13 +10,20 @@ import { green } from '../output.js';
 export interface FeedbackOptions {
   requestId: string;
   score: number;
-  comment?: string;
+  comment?: string | null;
+}
+
+/** Parse the CLI's textual score without coercing an empty argument to zero. */
+export function parseFeedbackScore(value: string): number {
+  const score = Number(value);
+  if (value.trim() === '' || !Number.isInteger(score) || score < -10 || score > 10) {
+    throw new Error('--score must be an integer from -10 through 10');
+  }
+  return score;
 }
 
 export async function runFeedback(conn: Connection, opts: FeedbackOptions): Promise<void> {
   const client = new RouteplaneCoreClient({ apiKey: conn.apiKey, baseUrl: conn.baseUrl });
-  const body: Record<string, unknown> = { request_id: opts.requestId, score: opts.score };
-  if (opts.comment !== undefined) body.comment = opts.comment;
-  await client.post<unknown>('/v1/feedback', body);
-  process.stdout.write(`${green('✓')} Feedback recorded for ${opts.requestId}.\n`);
+  await client.feedback.create(opts);
+  process.stdout.write(`${green('✓')} Feedback acknowledged for ${opts.requestId}.\n`);
 }

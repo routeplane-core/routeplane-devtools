@@ -59,6 +59,34 @@ const usage = await rp.get('/v1/finops/usage', { from: '2026-07-01' });
 const headers = createHeaders({ provider: 'gemini', strategy: 'latency', residency: 'IN' });
 ```
 
+### Legacy feedback
+
+Use the gateway-generated `req_...` identifier from the response's
+`x-routeplane-request-id` (or its `x-routeplane-trace-id` alias), not the
+provider's completion body ID:
+
+```ts
+await rp.feedback.create({ requestId: gatewayRequestId, score: 1 });
+```
+
+The existing arguments now serialize as `{"trace_id":"req_...","value":1}`.
+Scores must be integers from −10 through 10, without rescaling. Fractional,
+nonfinite, out-of-range and non-number values are rejected before dispatch.
+Omitted, `null` and empty comments are omitted; every nonempty comment, including
+whitespace-only text, is explicitly rejected as unsupported. The helper still
+returns `Promise<void>`; acknowledgement proves neither target existence nor
+durable storage.
+
+The existing CLI uses the same contract:
+
+```sh
+rp feedback --request-id req_from_gateway_response_header --score 1
+```
+
+It prints acknowledgement only after success. Invalid scores and unsupported
+comments exit nonzero without sending feedback. `--comment` remains recognized,
+but only an empty value is supported by this legacy endpoint.
+
 ### Agentic security
 
 Wrap every agent tool call in the gateway's default-deny policy boundary. A refusal is a

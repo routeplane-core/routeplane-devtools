@@ -19,7 +19,7 @@ import { runEmbed } from './commands/embed.js';
 import { runPromptsList, runPromptsGet, runPromptsRender } from './commands/prompts.js';
 import { runProvidersList } from './commands/providers.js';
 import { runCachePurge } from './commands/cache.js';
-import { runFeedback } from './commands/feedback.js';
+import { parseFeedbackScore, runFeedback } from './commands/feedback.js';
 import { runResidency } from './commands/residency.js';
 import {
   runAgentsRuns,
@@ -244,13 +244,12 @@ program
   .command('feedback')
   .description('submit quality feedback on a request')
   .requiredOption('--request-id <id>', 'the gateway request id to score')
-  .requiredOption('--score <score>', 'quality score (number)')
-  .option('--comment <text>', 'free-text comment')
+  .requiredOption('--score <score>', 'integer score from -10 through 10 (no rescaling)')
+  .option('--comment <text>', 'unsupported by legacy feedback; only an empty value is accepted')
   .action(async (options, command: Command) => {
     const globals = command.optsWithGlobals() as GlobalFlags;
     const conn = resolveConnection(globals);
-    const score = Number(options.score);
-    if (!Number.isFinite(score)) throw new Error('--score must be a number');
+    const score = parseFeedbackScore(options.score);
     await runFeedback(conn, { requestId: options.requestId, score, comment: options.comment });
   });
 
