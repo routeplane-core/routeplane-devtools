@@ -8,7 +8,7 @@ export type {
 export { LogResource } from './logs.js';
 export type { LogListOptions } from './logs.js';
 export { FinOpsResource } from './finops.js';
-export type { DateRangeOptions } from './finops.js';
+export type { DateRangeOptions, TimeseriesOptions } from './finops.js';
 export { CacheResource } from './cache.js';
 export { FeedbackResource } from './feedback.js';
 export type { FeedbackOptions } from './feedback.js';
