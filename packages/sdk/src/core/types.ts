@@ -89,12 +89,12 @@ function toNumber(value: string | null): number | undefined {
 
 function parseRateLimits(headers: HeadersLike): RouteplaneRateLimits | undefined {
   const limits: RouteplaneRateLimits = {};
-  const requestsLimit = toNumber(headers.get('x-routeplane-ratelimit-requests-limit'));
-  const requestsRemaining = toNumber(headers.get('x-routeplane-ratelimit-requests-remaining'));
-  const requestsReset = headers.get('x-routeplane-ratelimit-requests-reset');
-  const tokensLimit = toNumber(headers.get('x-routeplane-ratelimit-tokens-limit'));
-  const tokensRemaining = toNumber(headers.get('x-routeplane-ratelimit-tokens-remaining'));
-  const tokensReset = headers.get('x-routeplane-ratelimit-tokens-reset');
+  const requestsLimit = toNumber(headers.get('x-ratelimit-limit-requests'));
+  const requestsRemaining = toNumber(headers.get('x-ratelimit-remaining-requests'));
+  const requestsReset = headers.get('x-ratelimit-reset-requests');
+  const tokensLimit = toNumber(headers.get('x-ratelimit-limit-tokens'));
+  const tokensRemaining = toNumber(headers.get('x-ratelimit-remaining-tokens'));
+  const tokensReset = headers.get('x-ratelimit-reset-tokens');
 
   if (requestsLimit !== undefined) limits.requestsLimit = requestsLimit;
   if (requestsRemaining !== undefined) limits.requestsRemaining = requestsRemaining;

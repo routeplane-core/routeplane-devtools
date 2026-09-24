@@ -51,20 +51,191 @@ export interface LogEntry {
   [key: string]: unknown;
 }
 
-/** FinOps usage export (`GET /v1/finops/usage`). Shape varies by tier; kept open. */
-export type UsageData = Record<string, unknown>;
+/** Integer usage/cost totals shared by the recent chargeback groupings. */
+export interface FinOpsUsageTotals {
+  requests: number;
+  successful_requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  /** Gateway price-book estimate in integer millionths of a US dollar. */
+  cost_micro_usd: number;
+  /** ISO-4217 currency → integer minor units (for example INR → paise). */
+  cost_by_currency: Record<string, number>;
+}
 
-/** One day of usage rollup (`GET /v1/finops/usage/daily` → `days[]`). */
-export type DailyUsage = Record<string, unknown>;
+/** Upstream-attempt latency over the recent in-memory sample. */
+export interface FinOpsLatencyPercentiles {
+  count: number;
+  p50_ms?: number;
+  p95_ms?: number;
+  p99_ms?: number;
+  max_ms?: number;
+}
 
-/** Usage timeseries for charting (`GET /v1/finops/timeseries`). */
-export type TimeseriesData = Record<string, unknown>;
+/**
+ * `GET /v1/finops/usage` — recent, process-local chargeback/showback data.
+ *
+ * This is an estimate over the gateway's bounded in-memory event ring, not
+ * durable history and not a provider invoice or reconciled bill.
+ */
+export interface UsageData {
+  tenant_id: string;
+  window: number;
+  events_matched: number;
+  totals: FinOpsUsageTotals;
+  by_model: Record<string, FinOpsUsageTotals>;
+  by_key: Record<string, FinOpsUsageTotals>;
+  by_use_case?: Record<string, FinOpsUsageTotals>;
+  latency: FinOpsLatencyPercentiles;
+}
 
-/** Response-cache savings rollup (`GET /v1/finops/cache-savings`). */
-export type CacheSavings = Record<string, unknown>;
+export interface DailyModelUsage {
+  provider: string;
+  model: string;
+  requests: number;
+  errors: number;
+  total_tokens: number;
+  /** Null unless this aggregate has complete, versioned pricing coverage. */
+  cost_micro_usd: number | null;
+  pricing: DailyPricingEvidence;
+}
 
-/** Per-saver cost telemetry (`GET /v1/finops/saver-metrics`). */
-export type SaverMetrics = Record<string, unknown>;
+export interface DailyKeyUsage extends DailyModelUsage {
+  key: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_inr_paise: number | null;
+}
+
+export interface DailyPricingSource {
+  class: 'durable_rollup';
+  systems: ['telemetry_rung_1'];
+  schema_version: 'routeplane.finops.cost.v1';
+}
+
+export interface DailyPricingCoverage {
+  eligible_count: number;
+  observed_count: number;
+  priced_count: number;
+  unpriced_count: number;
+  invalid_pricing_count: number;
+  versioned_priced_count: number;
+  pricing_coverage_state: 'known' | 'legacy_unknown' | 'corrupt';
+  pricing_book_versions: string[];
+  pricing_book_versions_truncated: boolean;
+  numeric_overflowed: boolean;
+  missing_reasons: string[];
+}
+
+export interface DailyPricingEvidence {
+  data_state: 'live' | 'partial' | 'unavailable';
+  availability: 'available' | 'partial' | 'unavailable';
+  /** Canonical micro-USD total. Numeric zero is valid only when available. */
+  value: number | null;
+  unit: 'micro_currency';
+  currency: 'USD';
+  scale: 6;
+  cost_status: 'estimated' | 'unpriced' | 'unavailable';
+  source: DailyPricingSource;
+  coverage: DailyPricingCoverage;
+  component_coverage: {
+    input_output_split_available: boolean;
+    inr_view_available: boolean;
+  };
+}
+
+export interface DailyUsage {
+  date: string;
+  requests: number;
+  errors: number;
+  streaming: number;
+  sovereign_routed: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_micro_usd: number | null;
+  input_cost_micro_usd: number | null;
+  output_cost_micro_usd: number | null;
+  cost_inr_paise: number | null;
+  pricing: DailyPricingEvidence;
+  latency_ms: { p50: number | null; p95: number | null; p99: number | null };
+  by_model: DailyModelUsage[];
+  by_key: DailyKeyUsage[];
+}
+
+export interface DailyUsageTotals {
+  requests: number;
+  errors: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_micro_usd: number | null;
+  input_cost_micro_usd: number | null;
+  output_cost_micro_usd: number | null;
+  cost_inr_paise: number | null;
+  pricing: DailyPricingEvidence;
+}
+
+/** Durable daily estimated usage; still not a billed or reconciled amount. */
+export interface DailyUsageReport {
+  tenant_id: string;
+  from: string;
+  to: string;
+  days: DailyUsage[];
+  totals: DailyUsageTotals;
+  note: string;
+}
+
+export interface TimeseriesBucket {
+  ts: string;
+  requests: number;
+  errors: number;
+  cost_micro_usd: number;
+  tokens: number;
+  avg_latency_ms: number;
+}
+
+/** Recent, process-local time series from the bounded in-memory event ring. */
+export interface TimeseriesData {
+  tenant_id: string;
+  window_mins: number;
+  window_secs: number;
+  bucket_secs: number;
+  total_events_in_window: number;
+  buckets: TimeseriesBucket[];
+  note: string;
+}
+
+/** Recent, estimated response-cache savings; not a billed saving. */
+export interface CacheSavings {
+  tenant_id: string;
+  window_mins: number;
+  cache_hits: number;
+  cacheable_lookups: number;
+  saved_cost_micro_usd: number;
+  saved_tokens: number;
+  note: string;
+}
+
+/** Tenant-scoped cache portion of the recent saver metrics response. */
+export interface SaverMetrics {
+  tenant_id: string;
+  window_mins: number;
+  tenant: {
+    cache: {
+      hits: number;
+      misses: number;
+      cacheable_lookups: number;
+      hit_rate: number;
+      saved_cost_micro_usd: number;
+      saved_tokens: number;
+    };
+    note: string;
+  };
+  /** Saver key → reason no honest aggregate is available yet. */
+  not_instrumented: Record<string, string>;
+}
 
 /** Residency-decision summary (`GET /v1/residency/summary`). */
 export type ResidencySummary = Record<string, unknown>;
@@ -154,8 +325,40 @@ export interface RubricCatalog {
   note?: string;
 }
 
-/** `GET /v1/evaluations` — past judge scores. Row shape is gateway-defined. */
-export type EvaluationsPage = Record<string, unknown>;
+export interface EvaluationHistoryRow {
+  timestamp: string;
+  region: string | null;
+  rubric: string;
+  judge_variant: string;
+  passed: boolean;
+  score: number;
+  inference_id: string;
+}
+
+export interface EvaluationRubricSummary {
+  rubric: string;
+  judge_variant: string;
+  n: number;
+  n_passed: number;
+  mean_score: number;
+}
+
+export interface EvaluationHistorySummary {
+  n: number;
+  n_passed: number;
+  pass_rate: number;
+  by_rubric: EvaluationRubricSummary[];
+}
+
+/** Durable judge-score history; its summary covers only the returned rows. */
+export interface EvaluationsPage {
+  tenant_id: string;
+  from: string;
+  to: string;
+  rows: EvaluationHistoryRow[];
+  summary: EvaluationHistorySummary;
+  note: string;
+}
 
 // --- MCP agentic security (`/v1/mcp/*`) -----------------------------------
 //

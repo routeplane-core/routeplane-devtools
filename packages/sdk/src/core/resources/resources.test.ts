@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteplaneCoreClient, RouteplaneError } from '../client.js';
+import type { DailyPricingEvidence, DailyUsageReport } from '../models.js';
 
 interface Captured {
   url: string;
@@ -142,19 +143,109 @@ describe('LogResource', () => {
 });
 
 describe('FinOpsResource', () => {
+  const pricing = (
+    availability: DailyPricingEvidence['availability'],
+    value: number | null,
+  ): DailyPricingEvidence => ({
+    data_state: availability === 'available' ? 'live' : availability,
+    availability,
+    value,
+    unit: 'micro_currency',
+    currency: 'USD',
+    scale: 6,
+    cost_status: availability === 'available' ? 'estimated' : 'unavailable',
+    source: {
+      class: 'durable_rollup',
+      systems: ['telemetry_rung_1'],
+      schema_version: 'routeplane.finops.cost.v1',
+    },
+    coverage: {
+      eligible_count: 1,
+      observed_count: 1,
+      priced_count: availability === 'available' ? 1 : 0,
+      unpriced_count: 0,
+      invalid_pricing_count: availability === 'available' ? 0 : 1,
+      versioned_priced_count: availability === 'available' ? 1 : 0,
+      pricing_coverage_state: availability === 'unavailable' ? 'corrupt' : 'known',
+      pricing_book_versions: availability === 'available' ? ['pb_1'] : [],
+      pricing_book_versions_truncated: false,
+      numeric_overflowed: false,
+      missing_reasons: availability === 'available' ? [] : ['pricing_coverage_corrupt'],
+    },
+    component_coverage: {
+      input_output_split_available: false,
+      inr_view_available: false,
+    },
+  });
+
   it('usage() → GET /v1/finops/usage', async () => {
     stubFetch({ spend: 1 });
     await client().finops.usage();
     expect(captured[0]?.url).toBe('https://api.routeplane.ai/v1/finops/usage');
   });
 
-  it('usageDaily() → GET /v1/finops/usage/daily?from&to and unwraps `days`', async () => {
-    stubFetch({ days: [{ date: '2026-07-01' }] });
-    const days = await client().finops.usageDaily({ from: '2026-07-01', to: '2026-07-02' });
+  it('usageDailyReport() preserves the durable report envelope', async () => {
+    const report = {
+      tenant_id: 't_1', from: '2026-07-01', to: '2026-07-02',
+      days: [],
+      totals: {
+        requests: 1, errors: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0,
+        cost_micro_usd: 0, input_cost_micro_usd: null, output_cost_micro_usd: null,
+        cost_inr_paise: null, pricing: pricing('available', 0),
+      },
+      note: 'estimated',
+    } satisfies DailyUsageReport;
+    stubFetch(report);
+    const body = await client().finops.usageDailyReport({ from: '2026-07-01', to: '2026-07-02' });
     expect(captured[0]?.url).toBe(
       'https://api.routeplane.ai/v1/finops/usage/daily?from=2026-07-01&to=2026-07-02',
     );
-    expect(days).toEqual([{ date: '2026-07-01' }]);
+    expect(body).toEqual(report);
+  });
+
+  it('usageDailyReport() preserves unavailable cost as null with corrupt evidence', async () => {
+    const report = {
+      tenant_id: 't_1', from: '2026-07-01', to: '2026-07-01', days: [],
+      totals: {
+        requests: 1, errors: 0, prompt_tokens: 4, completion_tokens: 2, total_tokens: 6,
+        cost_micro_usd: null, input_cost_micro_usd: null, output_cost_micro_usd: null,
+        cost_inr_paise: null, pricing: pricing('unavailable', null),
+      },
+      note: 'pricing unavailable',
+    } satisfies DailyUsageReport;
+    stubFetch(report);
+
+    const body = await client().finops.usageDailyReport();
+    expect(body.totals.cost_micro_usd).toBeNull();
+    expect(body.totals.pricing.coverage.pricing_coverage_state).toBe('corrupt');
+    expect(body.totals.total_tokens).toBe(6);
+  });
+
+  it('usageDaily() remains a deprecated rows-only compatibility helper', async () => {
+    stubFetch({ days: [{ date: '2026-07-01' }] });
+    await expect(client().finops.usageDaily()).resolves.toEqual([{ date: '2026-07-01' }]);
+  });
+
+  it('timeseries() sends the gateway window_mins/buckets contract', async () => {
+    stubFetch({});
+    await client().finops.timeseries({ windowMins: 60, buckets: 12 });
+    expect(captured[0]?.url).toBe(
+      'https://api.routeplane.ai/v1/finops/timeseries?window_mins=60&buckets=12',
+    );
+  });
+
+  it('timeseries() converts a legacy date range to an explicit recent duration', async () => {
+    stubFetch({});
+    await client().finops.timeseries({ from: '2026-07-01T00:00:00Z', to: '2026-07-01T02:00:00Z' });
+    expect(captured[0]?.url).toBe(
+      'https://api.routeplane.ai/v1/finops/timeseries?window_mins=120',
+    );
+  });
+
+  it('timeseries() rejects a partial legacy range instead of silently ignoring it', () => {
+    expect(() => client().finops.timeseries({ from: '2026-07-01' })).toThrow(
+      'require both `from` and `to`',
+    );
   });
 
   it('timeseries/cacheSavings/saverMetrics hit their paths', async () => {

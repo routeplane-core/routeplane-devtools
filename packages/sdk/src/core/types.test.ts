@@ -11,8 +11,9 @@ describe('parseResponseMeta', () => {
       'x-routeplane-hedged': 'true',
       'x-routeplane-shed': 'false',
       'x-routeplane-pii-masked': '1',
-      'x-routeplane-ratelimit-requests-remaining': '97',
-      'x-routeplane-ratelimit-tokens-limit': '100000',
+      'x-ratelimit-remaining-requests': '97',
+      'x-ratelimit-limit-tokens': '100000',
+      'x-ratelimit-reset-tokens': '42',
     });
 
     const meta = parseResponseMeta(headers);
@@ -23,7 +24,11 @@ describe('parseResponseMeta', () => {
     expect(meta.hedged).toBe(true);
     expect(meta.shed).toBe(false);
     expect(meta.piiMasked).toBe(true);
-    expect(meta.rateLimits).toEqual({ requestsRemaining: 97, tokensLimit: 100000 });
+    expect(meta.rateLimits).toEqual({
+      requestsRemaining: 97,
+      tokensLimit: 100000,
+      tokensReset: '42',
+    });
   });
 
   it('returns an empty object when no routeplane headers are present', () => {
