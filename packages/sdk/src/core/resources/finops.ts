@@ -11,9 +11,9 @@ import type {
 } from '../models.js';
 
 export interface DateRangeOptions {
-  /** Start date (ISO 8601 or YYYY-MM-DD). */
+  /** @deprecated Absolute ranges are rejected; use usageDailyReport(). */
   from?: string;
-  /** End date (ISO 8601 or YYYY-MM-DD). */
+  /** @deprecated Absolute ranges are rejected; use usageDailyReport(). */
   to?: string;
 }
 
@@ -37,18 +37,9 @@ function timeseriesParams(
 ): Record<string, string> | undefined {
   if (!opts) return undefined;
   if ('from' in opts || 'to' in opts) {
-    if (!opts.from || !opts.to) {
-      throw new TypeError('legacy timeseries date ranges require both `from` and `to`');
-    }
-    const from = Date.parse(opts.from);
-    const to = Date.parse(opts.to);
-    if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
-      throw new RangeError('legacy timeseries `from`/`to` must be valid and ordered');
-    }
-    // The server has only a RECENT relative window, not an absolute date range.
-    // Preserve old call sites by converting the interval to an explicit duration;
-    // the gateway then applies its documented 1..1440 minute clamp.
-    return { window_mins: String(Math.max(1, Math.ceil((to - from) / 60_000))) };
+    throw new TypeError(
+      'absolute timeseries date ranges are unsupported; use usageDailyReport({ from, to })',
+    );
   }
   const native = opts as TimeseriesOptions;
   const params: Record<string, string> = {};
@@ -86,9 +77,9 @@ export class FinOpsResource {
   /**
    * Recent, process-local usage time series suitable for charting.
    *
-   * Legacy `{from,to}` options are accepted for source compatibility and are
-   * converted to a relative `window_mins` duration. They never select absolute
-   * historical dates; use {@link usageDailyReport} for durable date ranges.
+   * Legacy `{from,to}` options remain in the type for source compatibility but
+   * are rejected because this endpoint cannot select an absolute period. Use
+   * {@link usageDailyReport} for durable date ranges.
    */
   timeseries(opts?: TimeseriesOptions | DateRangeOptions): Promise<TimeseriesData> {
     return this.client.get<TimeseriesData>('/v1/finops/timeseries', timeseriesParams(opts));
