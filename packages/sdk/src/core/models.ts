@@ -141,6 +141,12 @@ export interface DailyPricingEvidence {
   coverage: DailyPricingCoverage;
   component_coverage: {
     input_output_split_available: boolean;
+    cost_split_coverage_state: 'known' | 'legacy_unknown' | 'corrupt';
+    input_attributed_count: number;
+    output_attributed_count: number;
+    invalid_input_count: number;
+    invalid_output_count: number;
+    missing_reasons: string[];
     inr_view_available: boolean;
   };
 }

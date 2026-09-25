@@ -174,6 +174,12 @@ describe('FinOpsResource', () => {
     },
     component_coverage: {
       input_output_split_available: false,
+      cost_split_coverage_state: 'legacy_unknown',
+      input_attributed_count: 0,
+      output_attributed_count: 0,
+      invalid_input_count: 0,
+      invalid_output_count: 0,
+      missing_reasons: ['legacy_cost_split_coverage_unknown'],
       inr_view_available: false,
     },
   });
@@ -234,17 +240,20 @@ describe('FinOpsResource', () => {
     );
   });
 
-  it('timeseries() converts a legacy date range to an explicit recent duration', async () => {
+  it('timeseries() rejects a legacy absolute date range instead of moving it to now', () => {
     stubFetch({});
-    await client().finops.timeseries({ from: '2026-07-01T00:00:00Z', to: '2026-07-01T02:00:00Z' });
-    expect(captured[0]?.url).toBe(
-      'https://api.routeplane.ai/v1/finops/timeseries?window_mins=120',
+    expect(() => client().finops.timeseries({
+      from: '2026-07-01T00:00:00Z',
+      to: '2026-07-01T02:00:00Z',
+    })).toThrow(
+      'absolute timeseries date ranges are unsupported; use usageDailyReport({ from, to })',
     );
+    expect(captured).toHaveLength(0);
   });
 
   it('timeseries() rejects a partial legacy range instead of silently ignoring it', () => {
     expect(() => client().finops.timeseries({ from: '2026-07-01' })).toThrow(
-      'require both `from` and `to`',
+      'absolute timeseries date ranges are unsupported; use usageDailyReport({ from, to })',
     );
   });
 
